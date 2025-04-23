@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Traffic Visualization</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-height: 100vh;
+        }
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px;
+            text-align: center;
+        }
+        .content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .graph-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #ddd;
+            background-color: #fff;
+        }
+        #graph {
+            width: 100%;
+            height: 100%;
+        }
+        .sidebar {
+            width: 250px;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-left: 1px solid #ddd;
+            overflow-y: auto;
+        }
+        .control-group {
+            margin-bottom: 20px;
+        }
+        .control-group h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+        input[type="range"], select {
+            width: 100%;
+            margin: 5px 0;
+        }
+        .footer {
+            background-color: #f1f1f1;
+            padding: 10px;
+            text-align: center;
+            font-size: 12px;
+            border-top: 1px solid #ddd;
+        }
+        .node-info {
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            max-width: 300px;
+            display: none;
+        }
+        .stat-box {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 15px;
+        }
+        .stat-box h4 {
+            margin-top: 0;
+            margin-bottom: 5px;
+            color: #2c3e50;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 2px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 10px;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+            border-radius: 50%;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Network Traffic Visualization</h1>
+        </div>
+        <div class="content">
+            <div class="graph-container">
+                <div id="graph"></div>
+                <div class="node-info" id="nodeInfo"></div>
+            </div>
+            <div class="sidebar">
+                <div class="stat-box">
+                    <h4>Network Statistics</h4>
+                    <div id="stats">
+                        <p>Total Packets: <span id="totalPackets">0</span></p>
+                        <p>Unique IP Addresses: <span id="uniqueIPs">0</span></p>
+                        <p>Most Active Source: <span id="activeSource">-</span></p>
+                        <p>Most Active Destination: <span id="activeDest">-</span></p>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Layout Controls</h3>
+                    <label for="linkDistance">Link Distance:</label>
+                    <input type="range" id="linkDistance" min="10" max="300" value="150">
+                    
+                    <label for="nodeCharge">Node Repulsion:</label>
+                    <input type="range" id="nodeCharge" min="-1000" max="0" value="-300">
+                </div>
+                
+                <div class="control-group">
+                    <h3>Visualization Settings</h3>
+                    <label for="nodeSize">Base Node Size:</label>
+                    <input type="range" id="nodeSize" min="2" max="20" value="8">
+                    
+                    <label for="nodeSizeMultiplier">Size Multiplier:</label>
+                    <input type="range" id="nodeSizeMultiplier" min="1" max="10" value="3">
+                    
+                    <label for="colorScheme">Color Scheme:</label>
+                    <select id="colorScheme">
+                        <option value="category10">Category 10</option>
+                        <option value="accent">Accent</option>
+                        <option value="paired">Paired</option>
+                        <option value="set1">Set 1</option>
+                        <option value="set2">Set 2</option>
+                        <option value="set3">Set 3</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Filter</h3>
+                    <label for="ipFilter">Filter by IP:</label>
+                    <input type="text" id="ipFilter" placeholder="Enter IP address" style="width: 100%; margin-bottom: 5px;">
+                    <button id="applyFilter">Apply Filter</button>
+                    <button id="resetFilter">Reset</button>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Legend</h3>
+                    <div class="legend" id="legendContainer"></div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Actions</h3>
+                    <button id="pauseSimulation">Pause Physics</button>
+                    <button id="resetSimulation">Reset Layout</button>
+                    <button id="exportSVG">Export as SVG</button>
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            Network Traffic Visualization Tool | Packet Data Analysis
+        </div>
+    </div>
+
+    <script>
+        // Sample data from your provided PCAP information
+        const pcapData = {}
+
+        // Process the data to extract unique IPs and calculate frequencies
+        function processData(data) {
+            const nodes = new Map();
+            const links = [];
+            const ipCounts = {};
+            
+            // Helper function to extract the base IP without port
+            function extractBaseIP(fullIP) {
+                return fullIP.split(':')[0];
+            }
+            
+            // Count occurrences of each IP
+            Object.values(data).forEach(packet => {
+                const sourceIP = extractBaseIP(packet.Source);
+                const destIP = extractBaseIP(packet.Destination);
+                
+                ipCounts[sourceIP] = (ipCounts[sourceIP] || 0) + 1;
+                ipCounts[destIP] = (ipCounts[destIP] || 0) + 1;
+            });
+            
+            // Create nodes
+            Object.keys(ipCounts).forEach(ip => {
+                // Define node type: source or destination
+                let type = "both";
+                const isSource = Object.values(data).some(p => extractBaseIP(p.Source) === ip);
+                const isDest = Object.values(data).some(p => extractBaseIP(p.Destination) === ip);
+                
+                if (isSource && !isDest) type = "source";
+                else if (!isSource && isDest) type = "destination";
+                
+                nodes.set(ip, {
+                    id: ip,
+                    count: ipCounts[ip],
+                    type: type
+                });
+            });
+            
+            // Create links
+            const uniqueLinks = new Set();
+            
+            Object.values(data).forEach(packet => {
+                const sourceIP = extractBaseIP(packet.Source);
+                const destIP = extractBaseIP(packet.Destination);
+                const linkKey = `${sourceIP}-${destIP}`;
+                
+                if (!uniqueLinks.has(linkKey)) {
+                    uniqueLinks.add(linkKey);
+                    links.push({
+                        source: sourceIP,
+                        target: destIP,
+                        protocol: packet.Procotol,
+                        value: 1  // Initial value, will be updated
+                    });
+                } else {
+                    // Increment link value if it already exists
+                    const link = links.find(l => l.source === sourceIP && l.target === destIP);
+                    if (link) link.value++;
+                }
+            });
+            
+            // Find most active IPs
+            let maxCount = 0;
+            let mostActiveSource = null;
+            let maxDestCount = 0;
+            let mostActiveDest = null;
+            
+            nodes.forEach((node, ip) => {
+                if (node.type === "source" || node.type === "both") {
+                    if (node.count > maxCount) {
+                        maxCount = node.count;
+                        mostActiveSource = ip;
+                    }
+                }
+                if (node.type === "destination" || node.type === "both") {
+                    if (node.count > maxDestCount) {
+                        maxDestCount = node.count;
+                        mostActiveDest = ip;
+                    }
+                }
+            });
+            
+            return {
+                nodes: Array.from(nodes.values()),
+                links: links,
+                stats: {
+                    totalPackets: Object.keys(data).length,
+                    uniqueIPs: nodes.size,
+                    mostActiveSource: mostActiveSource,
+                    mostActiveDest: mostActiveDest
+                }
+            };
+        }
+
+        // Initialize the visualization
+        function initializeGraph() {
+            // Process data
+            const processedData = processData(pcapData);
+            let graphData = {
+                nodes: [...processedData.nodes],
+                links: [...processedData.links]
+            };
+            let simulation;
+            
+            // Update statistics
+            document.getElementById('totalPackets').textContent = processedData.stats.totalPackets;
+            document.getElementById('uniqueIPs').textContent = processedData.stats.uniqueIPs;
+            document.getElementById('activeSource').textContent = processedData.stats.mostActiveSource || "-";
+            document.getElementById('activeDest').textContent = processedData.stats.mostActiveDest || "-";
+            
+            // Set initial control values
+            let linkDistance = 150;
+            let nodeCharge = -300;
+            let baseNodeSize = 8;
+            let nodeSizeMultiplier = 3;
+            let colorScheme = "category10";
+            
+            // Get the container dimensions
+            const container = document.getElementById('graph');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            // Create SVG element
+            const svg = d3.select("#graph")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height);
+            
+            // Define color scales
+            const colorScales = {
+                category10: d3.scaleOrdinal(d3.schemeCategory10),
+                accent: d3.scaleOrdinal(d3.schemeAccent),
+                paired: d3.scaleOrdinal(d3.schemePaired),
+                set1: d3.scaleOrdinal(d3.schemeSet1),
+                set2: d3.scaleOrdinal(d3.schemeSet2),
+                set3: d3.scaleOrdinal(d3.schemeSet3)
+            };
+            
+            // Create a group for the graph elements
+            const g = svg.append("g");
+            
+            // Add zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 10])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+            
+            svg.call(zoom);
+            
+            // Create links and nodes
+            const link = g.append("g")
+                .selectAll("line")
+                .data(graphData.links)
+                .enter()
+                .append("line")
+                .attr("stroke", "#999")
+                .attr("stroke-opacity", 0.6)
+                .attr("stroke-width", d => Math.sqrt(d.value));
+            
+            const node = g.append("g")
+                .selectAll("circle")
+                .data(graphData.nodes)
+                .enter()
+                .append("circle")
+                .attr("r", d => calculateNodeSize(d))
+                .attr("fill", d => getNodeColor(d))
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 1.5)
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+            
+            // Add text labels for larger nodes
+            const labels = g.append("g")
+                .selectAll("text")
+                .data(graphData.nodes)
+                .enter()
+                .append("text")
+                .text(d => d.count > 1 ? d.id : "")
+                .attr("font-size", 10)
+                .attr("dx", 12)
+                .attr("dy", 4)
+                .style("pointer-events", "none");
+            
+            // Initialize simulation
+            simulation = d3.forceSimulation(graphData.nodes)
+                .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(linkDistance))
+                .force("charge", d3.forceManyBody().strength(nodeCharge))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("x", d3.forceX(width / 2).strength(0.1))
+                .force("y", d3.forceY(height / 2).strength(0.1))
+                .on("tick", ticked);
+            
+            // Handle node information display
+            node.on("mouseover", showNodeInfo)
+                .on("mouseout", hideNodeInfo);
+            
+            // Helper function to calculate node size based on frequency
+            function calculateNodeSize(d) {
+                return baseNodeSize + Math.sqrt(d.count) * nodeSizeMultiplier;
+            }
+            
+            // Helper function to determine node color based on type
+            function getNodeColor(d) {
+                if (d.type === "source") return colorScales[colorScheme](0);
+                if (d.type === "destination") return colorScales[colorScheme](1);
+                return colorScales[colorScheme](2); // for "both"
+            }
+            
+            // Update positions on each tick
+            function ticked() {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                
+                node
+                    .attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+                
+                labels
+                    .attr("x", d => d.x)
+                    .attr("y", d => d.y);
+            }
+            
+            // Drag functions
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+            
+            // Show node information on hover
+            function showNodeInfo(event, d) {
+                const nodeInfo = document.getElementById('nodeInfo');
+                nodeInfo.innerHTML = `
+                    <strong>IP: ${d.id}</strong><br>
+                    Type: ${d.type}<br>
+                    Occurrences: ${d.count}<br>
+                    ${d.type !== "destination" ? `Outgoing connections: ${graphData.links.filter(l => l.source.id === d.id).length}<br>` : ''}
+                    ${d.type !== "source" ? `Incoming connections: ${graphData.links.filter(l => l.target.id === d.id).length}` : ''}
+                `;
+                nodeInfo.style.display = 'block';
+            }
+            
+            function hideNodeInfo() {
+                document.getElementById('nodeInfo').style.display = 'none';
+            }
+            
+            // Create legend
+            createLegend();
+            
+            function createLegend() {
+                const legendContainer = document.getElementById('legendContainer');
+                legendContainer.innerHTML = '';
+                
+                const types = [
+                    { type: "source", label: "Source" },
+                    { type: "destination", label: "Destination" },
+                    { type: "both", label: "Source & Dest" }
+                ];
+                
+                types.forEach((item, i) => {
+                    const legendItem = document.createElement('div');
+                    legendItem.className = 'legend-item';
+                    
+                    const colorBox = document.createElement('div');
+                    colorBox.className = 'legend-color';
+                    colorBox.style.backgroundColor = colorScales[colorScheme](i);
+                    
+                    const label = document.createElement('span');
+                    label.textContent = item.label;
+                    
+                    legendItem.appendChild(colorBox);
+                    legendItem.appendChild(label);
+                    legendContainer.appendChild(legendItem);
+                });
+            }
+            
+            // Event listeners for controls
+            document.getElementById('linkDistance').addEventListener('input', function() {
+                linkDistance = parseInt(this.value);
+                simulation.force("link").distance(linkDistance);
+                simulation.alpha(0.3).restart();
+            });
+            
+            document.getElementById('nodeCharge').addEventListener('input', function() {
+                nodeCharge = parseInt(this.value);
+                simulation.force("charge").strength(nodeCharge);
+                simulation.alpha(0.3).restart();
+            });
+            
+            document.getElementById('nodeSize').addEventListener('input', function() {
+                baseNodeSize = parseInt(this.value);
+                node.attr("r", d => calculateNodeSize(d));
+            });
+            
+            document.getElementById('nodeSizeMultiplier').addEventListener('input', function() {
+                nodeSizeMultiplier = parseInt(this.value);
+                node.attr("r", d => calculateNodeSize(d));
+            });
+            
+            document.getElementById('colorScheme').addEventListener('change', function() {
+                colorScheme = this.value;
+                node.attr("fill", d => getNodeColor(d));
+                createLegend();
+            });
+            
+            document.getElementById('pauseSimulation').addEventListener('click', function() {
+                if (simulation.alpha() > 0) {
+                    simulation.stop();
+                    this.textContent = "Resume Physics";
+                } else {
+                    simulation.restart();
+                    this.textContent = "Pause Physics";
+                }
+            });
+            
+            document.getElementById('resetSimulation').addEventListener('click', function() {
+                simulation.nodes(graphData.nodes);
+                simulation.force("link").links(graphData.links);
+                simulation.alpha(1).restart();
+                
+                // Reset zoom
+                svg.transition().duration(750).call(
+                    zoom.transform,
+                    d3.zoomIdentity
+                );
+            });
+            
+            document.getElementById('exportSVG').addEventListener('click', function() {
+                const svgData = new XMLSerializer().serializeToString(svg.node());
+                const svgBlob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
+                const svgUrl = URL.createObjectURL(svgBlob);
+                
+                const downloadLink = document.createElement("a");
+                downloadLink.href = svgUrl;
+                downloadLink.download = "network_graph.svg";
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            });
+            
+            // Filter functionality
+            document.getElementById('applyFilter').addEventListener('click', function() {
+                const filterValue = document.getElementById('ipFilter').value.trim();
+                if (!filterValue) return;
+                
+                // Filter nodes and links
+                const filteredNodes = processedData.nodes.filter(node => 
+                    node.id.includes(filterValue) || 
+                    processedData.links.some(link => 
+                        (link.source === node.id || link.target === node.id) && 
+                        (link.source.includes(filterValue) || link.target.includes(filterValue))
+                    )
+                );
+                
+                const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+                
+                const filteredLinks = processedData.links.filter(link => 
+                    filteredNodeIds.has(link.source) && filteredNodeIds.has(link.target)
+                );
+                
+                updateGraph(filteredNodes, filteredLinks);
+            });
+            
+            document.getElementById('resetFilter').addEventListener('click', function() {
+                document.getElementById('ipFilter').value = '';
+                updateGraph(processedData.nodes, processedData.links);
+            });
+            
+            // Function to update the graph with new data
+            function updateGraph(nodes, links) {
+                // Update data references
+                graphData = {
+                    nodes: nodes,
+                    links: links
+                };
+                
+                // Update the links
+                link = link.data(links, d => `${d.source}-${d.target}`);
+                link.exit().remove();
+                link = link.enter()
+                    .append("line")
+                    .attr("stroke", "#999")
+                    .attr("stroke-opacity", 0.6)
+                    .attr("stroke-width", d => Math.sqrt(d.value))
+                    .merge(link);
+                
+                // Update the nodes
+                node = node.data(nodes, d => d.id);
+                node.exit().remove();
+                node = node.enter()
+                    .append("circle")
+                    .attr("r", d => calculateNodeSize(d))
+                    .attr("fill", d => getNodeColor(d))
+                    .attr("stroke", "#fff")
+                    .attr("stroke-width", 1.5)
+                    .call(d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended))
+                    .on("mouseover", showNodeInfo)
+                    .on("mouseout", hideNodeInfo)
+                    .merge(node);
+                
+                // Update labels
+                labels.remove();
+                labels = g.selectAll("text")
+                    .data(nodes)
+                    .enter()
+                    .append("text")
+                    .text(d => d.count > 1 ? d.id : "")
+                    .attr("font-size", 10)
+                    .attr("dx", 12)
+                    .attr("dy", 4)
+                    .style("pointer-events", "none");
+                
+                // Update and restart the simulation
+                simulation.nodes(nodes);
+                simulation.force("link").links(links);
+                simulation.alpha(1).restart();
+            }
+            
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                const newWidth = container.clientWidth;
+                const newHeight = container.clientHeight;
+                
+                svg.attr("width", newWidth)
+                   .attr("height", newHeight);
+                
+                simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2))
+                          .force("x", d3.forceX(newWidth / 2).strength(0.1))
+                          .force("y", d3.forceY(newHeight / 2).strength(0.1))
+                          .alpha(0.3)
+                          .restart();
+            });
+        }
+
+        // Initialize when document is loaded
+        document.addEventListener('DOMContentLoaded', initializeGraph);
+    </script>
+</body>
+</html>
