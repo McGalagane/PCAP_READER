@@ -80,7 +80,7 @@ def most_proto_statistic(PCAPS, PD):
     protos_list = list()
     for pcap in PCAPS:
         data = PD.ether_decode(pcap)
-        protos_list.append(data['Procotol'])
+        protos_list.append(data['Protocol'])
     most_count_dict = collections.OrderedDict(collections.Counter(protos_list).most_common(10))
     return most_count_dict
 

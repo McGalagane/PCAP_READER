@@ -24,8 +24,8 @@ def get_filter_pcap(PCAPS, PD, key, value):
     count = 1
     for p in PCAPS:
         pcap = PD.ether_decode(p)
-        if key == 'Procotol':
-            if value == pcap.get('Procotol').upper():
+        if key == 'Protocol':
+            if value == pcap.get('Protocol').upper():
                 pcaps[count] = pcap
                 count += 1
             else:
@@ -52,7 +52,7 @@ def proto_filter(filter_type, value, PCAPS, PD):
     if filter_type == u'all':
         pcaps = get_all_pcap(PCAPS, PD)
     elif filter_type == u'proto':
-        key = 'Procotol'
+        key = 'Protocol'
         value = str(value).strip().upper()
         pcaps = get_filter_pcap(PCAPS, PD, key, value)
     elif filter_type == u'ipsrc':

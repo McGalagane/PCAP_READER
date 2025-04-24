@@ -156,5 +156,5 @@ def most_flow_statistic(PCAPS, PD):
     most_flow_dict = collections.defaultdict(int)
     for pcap in PCAPS:
         data = PD.ether_decode(pcap)
-        most_flow_dict[data['Procotol']] += len(corrupt_bytes(pcap))
+        most_flow_dict[data['Protocol']] += len(corrupt_bytes(pcap))
     return most_flow_dict

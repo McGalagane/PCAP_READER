@@ -28,11 +28,14 @@ from streamlit_option_menu import option_menu
 import streamlit.components.v1 as components
 # from scapy.layers.inet import IP,TCP,UDP,
 from utils.pcap_decode import PcapDecode
+from mac_vendor_lookup import MacLookup
+from mac_vendor_lookup import VendorNotFoundError
 import time
 import plotly.express as px
 # from streamlit_pandas_profiling import st_profile_report
 # from folium.plugins import HeatMap
 
+mac = MacLookup()
 PD = PcapDecode()  # Parser
 PCAPS = None  # Packets
 
@@ -45,8 +48,20 @@ if 'pcap_data' not in st.session_state:
 
 def get_all_pcap(PCAPS, PD):
     pcaps = collections.OrderedDict()
-    for count, i in enumerate(PCAPS, 1):
+    for count, i in enumerate(PCAPS):
         pcaps[count] = PD.ether_decode(i)
+        print(count)
+    # for connection in pcaps.values():
+    #     if connection['src_mac'] != 'Unknown':
+    #         try:
+    #             connection['src_vendor'] = mac.lookup(connection['src_mac'])
+    #         except VendorNotFoundError:
+    #             connection['src_vendor'] = 'Unknonw'
+    #     if connection['dst_mac'] != 'Unknown':
+    #         try:
+    #             connection['dst_vendor'] = mac.lookup(connection['dst_mac'])
+    #         except VendorNotFoundError:
+    #             connection['dst_vendor'] = 'Unknonw'
     return pcaps
 
 
@@ -55,8 +70,8 @@ def get_filter_pcap(PCAPS, PD, key, value):
     count = 1
     for p in PCAPS:
         pcap = PD.ether_decode(p)
-        if key == 'Procotol':
-            if value == pcap.get('Procotol').upper():
+        if key == 'Protocol':
+            if value == pcap.get('Protocol').upper():
                 pcaps[count] = pcap
                 count += 1
             else:
@@ -175,7 +190,7 @@ def most_proto_statistic(PCAPS, PD):
     protos_list = list()
     for pcap in PCAPS:
         data = PD.ether_decode(pcap)
-        protos_list.append(data['Procotol'])
+        protos_list.append(data['Protocol'])
     most_count_dict = collections.OrderedDict(collections.Counter(protos_list).most_common(10))
     return most_count_dict
 
@@ -389,7 +404,7 @@ def most_flow_statistic(PCAPS, PD):
     most_flow_dict = collections.defaultdict(int)
     for pcap in PCAPS:
         data = PD.ether_decode(pcap)
-        most_flow_dict[data['Procotol']] += len(corrupt_bytes(pcap))
+        most_flow_dict[data['Protocol']] += len(corrupt_bytes(pcap))
     return most_flow_dict
 
 
@@ -609,7 +624,9 @@ def RawDataView():
         # Check if the uploaded file is a PCAP file
         if uploaded_file.type == "application/octet-stream":
             # Process the uploaded PCAP file
+            print('pas done')
             pcap_data = rdpcap(os.path.join(uploaded_file.name))
+            print("done")
             st.session_state.pcap_data = pcap_data
             # Example: Get all PCAPs
             all_data = get_all_pcap(pcap_data, PD)
@@ -629,7 +646,7 @@ def RawDataView():
             # Multiselect for filtering by protocol
             selected_protocols = st.sidebar.multiselect(
                 "Select Protocol:",
-                options=dataframe_data["Procotol"].unique(), default=None
+                options=dataframe_data["Protocol"].unique(), default=None
             )
             # st.sidebar.divider()
 
@@ -662,7 +679,7 @@ def RawDataView():
 
                 # Filter by protocol
                 if selected_protocols is not None and selected_protocols:
-                    Data_to_display_df = dataframe_data[dataframe_data["Procotol"].isin(selected_protocols)]
+                    Data_to_display_df = dataframe_data[dataframe_data["Protocol"].isin(selected_protocols)]
                 else:
                     Data_to_display_df = dataframe_data
 
@@ -720,7 +737,7 @@ def RawDataView():
                 # Column 2: Protocol Distribution and Destination Counts
                 with col2:
                     # Protocol Distribution
-                    protocol_counts = Data_to_display_df['Procotol'].value_counts(normalize=True)
+                    protocol_counts = Data_to_display_df['Protocol'].value_counts(normalize=True)
                     st.subheader("Protocol Distribution:")
                     st.table(protocol_counts)
 
@@ -1050,6 +1067,8 @@ def main():
                 
                 # Display the HTML with the data
                 components.html(html_data, height=1000)
+        else:
+            st.subheader("Upload a file to see the graph")
 
     if selected == "Analysis":
         st.subheader("Dashboard")
