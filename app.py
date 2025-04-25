@@ -26,14 +26,12 @@ import pydeck as pdk
 import folium
 from streamlit_option_menu import option_menu
 import streamlit.components.v1 as components
-# from scapy.layers.inet import IP,TCP,UDP,
 from utils.pcap_decode import PcapDecode
 from mac_vendor_lookup import MacLookup
 from mac_vendor_lookup import VendorNotFoundError
 import time
 import plotly.express as px
-# from streamlit_pandas_profiling import st_profile_report
-# from folium.plugins import HeatMap
+
 
 mac = MacLookup()
 PD = PcapDecode()  # Parser
@@ -50,7 +48,6 @@ def get_all_pcap(PCAPS, PD):
     pcaps = collections.OrderedDict()
     for count, i in enumerate(PCAPS):
         pcaps[count] = PD.ether_decode(i)
-        print(count)
     # for connection in pcaps.values():
     #     if connection['src_mac'] != 'Unknown':
     #         try:
@@ -624,9 +621,7 @@ def RawDataView():
         # Check if the uploaded file is a PCAP file
         if uploaded_file.type == "application/octet-stream":
             # Process the uploaded PCAP file
-            print('pas done')
             pcap_data = rdpcap(os.path.join(uploaded_file.name))
-            print("done")
             st.session_state.pcap_data = pcap_data
             # Example: Get all PCAPs
             all_data = get_all_pcap(pcap_data, PD)
@@ -1056,7 +1051,6 @@ def main():
                 # Convert your PCAP data to a JSON string for JavaScript
                 import json
                 pcap_json = json.dumps(all_data)
-                # print(pcap_json)
                 
                 # Read the HTML template
                 with open('graph.html', 'r') as f:
