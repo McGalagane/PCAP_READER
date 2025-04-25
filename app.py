@@ -6,6 +6,7 @@
 from datetime import datetime
 import numpy as np
 import plost
+import json
 import requests
 import streamlit as st
 import os
@@ -14,6 +15,7 @@ from streamlit_folium import folium_static
 from folium.plugins import MarkerCluster
 import folium
 from scapy.all import rdpcap
+from scapy.all import RawPcapReader, Ether
 from scapy.utils6 import in6_addrtovendor
 import collections
 import tempfile
@@ -25,8 +27,8 @@ import geoip2.database
 import pydeck as pdk
 import folium
 from streamlit_option_menu import option_menu
+from utils.pcap_decode import FastPcapDecode
 import streamlit.components.v1 as components
-from utils.pcap_decode import PcapDecode
 from mac_vendor_lookup import MacLookup
 from mac_vendor_lookup import VendorNotFoundError
 import time
@@ -34,8 +36,8 @@ import plotly.express as px
 
 
 mac = MacLookup()
-PD = PcapDecode()  # Parser
 PCAPS = None  # Packets
+pcap_decode = FastPcapDecode()
 
 
 if 'uploaded_file' not in st.session_state:
@@ -48,17 +50,6 @@ def get_all_pcap(PCAPS, PD):
     pcaps = collections.OrderedDict()
     for count, i in enumerate(PCAPS):
         pcaps[count] = PD.ether_decode(i)
-    # for connection in pcaps.values():
-    #     if connection['src_mac'] != 'Unknown':
-    #         try:
-    #             connection['src_vendor'] = mac.lookup(connection['src_mac'])
-    #         except VendorNotFoundError:
-    #             connection['src_vendor'] = 'Unknonw'
-    #     if connection['dst_mac'] != 'Unknown':
-    #         try:
-    #             connection['dst_vendor'] = mac.lookup(connection['dst_mac'])
-    #         except VendorNotFoundError:
-    #             connection['dst_vendor'] = 'Unknonw'
     return pcaps
 
 
@@ -617,141 +608,107 @@ def Intro():
 
 def RawDataView():
     uploaded_file = st.session_state.uploaded_file
-    if uploaded_file is not None:
-        # Check if the uploaded file is a PCAP file
-        if uploaded_file.type == "application/octet-stream":
-            # Process the uploaded PCAP file
-            pcap_data = rdpcap(os.path.join(uploaded_file.name))
-            st.session_state.pcap_data = pcap_data
-            # Example: Get all PCAPs
-            all_data = get_all_pcap(pcap_data, PD)
-            dataframe_data = process_json_data(all_data)
-            start_time, end_time, live_time_duration, live_time_duration_str = calculate_live_time(pcap_data)
+    if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
+        temp_file_path = f"/tmp/{uploaded_file.name}"
+        with open(temp_file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
-            # Add live time information to the data frame
-            # dataframe_data['Start Time'] = start_time
-            # dataframe_data['End Time'] = end_time
-            dataframe_data['Live Time Duration'] = live_time_duration_str
-            all_columns = list(dataframe_data.columns)
-            st.sidebar.header("P1ease Filter Here:")
-            # st.sidebar.divider()
-            # Filter reset button
-            if st.sidebar.button("Reset Filters"):
-                st.experimental_rerun()
-            # Multiselect for filtering by protocol
-            selected_protocols = st.sidebar.multiselect(
-                "Select Protocol:",
-                options=dataframe_data["Protocol"].unique(), default=None
+        # Call your dpkt-based processor
+        dataframe_data = pcap_decode.process_pcap(temp_file_path)
+        st.session_state.pcap_data = dataframe_data
+
+        # Add live time duration string if needed (dummy or calculated externally)
+        dataframe_data['Live Time Duration'] = 'N/A'  # Replace with actual string if available
+
+        all_columns = list(dataframe_data.columns)
+        st.sidebar.header("Please Filter Here:")
+
+        # Multiselect for filtering by protocol
+        selected_protocols = st.sidebar.multiselect(
+            "Select Protocol:",
+            options=dataframe_data["Protocol"].unique().tolist(), default=None
+        )
+
+        # Sidebar slider for filtering by length
+        filter_value_len = st.sidebar.slider(
+            "Filter by Length (Bytes):",
+            min_value=int(dataframe_data["len"].min()),
+            max_value=int(dataframe_data["len"].max()),
+            value=(int(dataframe_data["len"].min()), int(dataframe_data["len"].max()))
+        )
+
+        # Sidebar text input for filtering by Source
+        filter_source = st.sidebar.text_input("Filter by Source:", "")
+
+        # Sidebar text input for filtering by Destination
+        filter_destination = st.sidebar.text_input("Filter by Destination:", "")
+
+        # Apply filters
+        Data_to_display_df = dataframe_data.copy()
+
+        if selected_protocols:
+            Data_to_display_df = Data_to_display_df[Data_to_display_df["Protocol"].isin(selected_protocols)]
+
+        Data_to_display_df = Data_to_display_df[
+            (Data_to_display_df["len"] >= filter_value_len[0]) &
+            (Data_to_display_df["len"] <= filter_value_len[1])
+        ]
+
+        if filter_source:
+            Data_to_display_df = Data_to_display_df[
+                Data_to_display_df["Source"].str.contains(filter_source, case=False, na=False)
+            ]
+
+        if filter_destination:
+            Data_to_display_df = Data_to_display_df[
+                Data_to_display_df["Destination"].str.contains(filter_destination, case=False, na=False)
+            ]
+
+        st.write("Filtered PCAPs:")
+
+        # Column selection
+        column_check = st.checkbox("Do you want to filter the data by column-wise also?")
+        if column_check:
+            selected_columns = st.multiselect(
+                "Select Columns to Display:",
+                options=all_columns, default=all_columns
             )
-            # st.sidebar.divider()
+            Data_to_display_df = Data_to_display_df[selected_columns]
 
-            # Sidebar slider for filtering by length
-            filter_value_len = st.sidebar.slider(
-                "Filter by Numeric Column",
-                min_value=min(dataframe_data["len"]),
-                max_value=max(dataframe_data["len"]),
-                value=(min(dataframe_data["len"]), max(dataframe_data["len"]))
-            )
-            # st.sidebar.divider()
+        st.checkbox("Use container width", value=True, key="use_container_width")
+        st.dataframe(Data_to_display_df, use_container_width=st.session_state.use_container_width)
 
-            # Sidebar text input for filtering by Source
-            filter_source = st.sidebar.text_input("Filter by Source:", "")
-            # st.sidebar.divider()
+        # Statistics Section
+        st.subheader("Statistics of Selected Data")
 
-            # Sidebar text input for filtering by Destination
-            filter_destination = st.sidebar.text_input("Filter by Destination:", "")
-            # st.sidebar.divider()
+        try:
+            Data_to_display_df['time'] = pd.to_datetime(Data_to_display_df['time'])
+            st.subheader("Time Range:")
+            st.write("Earliest timestamp:", Data_to_display_df['time'].min())
+            st.write("Latest timestamp:", Data_to_display_df['time'].max())
+            st.write("Duration:", Data_to_display_df['time'].max() - Data_to_display_df['time'].min())
+        except Exception:
+            st.warning("Time format is invalid or missing.")
 
-            # Apply filters based on user selection
-            if (
-                    selected_protocols is None or not selected_protocols) and not filter_value_len and not filter_source and not filter_destination:
-                st.write("All PCAPs:")
-                Data_to_display_df = dataframe_data.copy()
-                st.dataframe(Data_to_display_df, use_container_width=True)
+        col1, col2 = st.columns(2)
 
-            else:
-                # Apply filters based on user input
+        with col1:
+            st.subheader("Packet Length Statistics:")
+            st.table(Data_to_display_df['len'].describe())
 
-                # Filter by protocol
-                if selected_protocols is not None and selected_protocols:
-                    Data_to_display_df = dataframe_data[dataframe_data["Protocol"].isin(selected_protocols)]
-                else:
-                    Data_to_display_df = dataframe_data
+            st.subheader("Source Counts:")
+            st.table(Data_to_display_df['Source'].value_counts())
 
-                # Filter by length
-                Data_to_display_df = Data_to_display_df[
-                    (Data_to_display_df["len"] >= filter_value_len[0]) & (
-                            Data_to_display_df["len"] <= filter_value_len[1])
-                    ]
+        with col2:
+            st.subheader("Protocol Distribution:")
+            st.table(Data_to_display_df['Protocol'].value_counts(normalize=True))
 
-                # Filter by Source
-                if filter_source:
-                    Data_to_display_df = Data_to_display_df[
-                        Data_to_display_df["Source"].str.contains(filter_source, case=False, na=False)]
-
-                # Filter by Destination
-                if filter_destination:
-                    Data_to_display_df = Data_to_display_df[
-                        Data_to_display_df["Destination"].str.contains(filter_destination, case=False, na=False)]
-
-                # Display the filtered dataframe
-                st.write("Filtered PCAPs:")
-
-                column_check = st.checkbox("Do you want to filter the data by column wise also ???")
-                if column_check:
-                    # Multiselect for filtering by columns
-                    selected_columns = st.multiselect(
-                        "Select Columns to Display:",
-                        options=all_columns, default=all_columns
-                    )
-                    Data_to_display_df = Data_to_display_df[selected_columns]
-                # selected_columns = [col for col in Data_to_display_df.columns if st.checkbox(col, value=True )]
-                st.checkbox("Use container width", value=True, key="use_container_width")
-                st.dataframe(Data_to_display_df, use_container_width=st.session_state.use_container_width)
-
-                st.subheader("Statistics of Selected Data")
-                # Time Analysis
-                Data_to_display_df['time'] = pd.to_datetime(Data_to_display_df['time'])
-                st.subheader("Time Range:")
-                st.write("Earliest timestamp:", Data_to_display_df['time'].min())
-                st.write("Latest timestamp:", Data_to_display_df['time'].max())
-                st.write("Duration:", Data_to_display_df['time'].max() - Data_to_display_df['time'].min())
-                ####################################
-                col1, col2 = st.columns(2)
-
-                # Column 1: Packet Length Statistics
-                with col1:
-                    st.subheader("Packet Length Statistics:")
-                    st.table(Data_to_display_df['len'].describe())
-
-                    # Source Counts
-                    source_counts = Data_to_display_df['Source'].value_counts()
-                    st.subheader("Source Counts:")
-                    st.table(source_counts)
-
-                # Column 2: Protocol Distribution and Destination Counts
-                with col2:
-                    # Protocol Distribution
-                    protocol_counts = Data_to_display_df['Protocol'].value_counts(normalize=True)
-                    st.subheader("Protocol Distribution:")
-                    st.table(protocol_counts)
-
-                    # Destination Counts
-                    destination_counts = Data_to_display_df['Destination'].value_counts()
-                    st.subheader("Destination Counts:")
-                    st.table(destination_counts)
+            st.subheader("Destination Counts:")
+            st.table(Data_to_display_df['Destination'].value_counts())
+    else:
+        st.warning("Please upload a valid PCAP file.")
 
 
-
-                #####################################
-
-
-
-
-
-
-        else:
-            st.warning("Please upload a valid PCAP file.")
 
 
 
@@ -1039,28 +996,27 @@ def main():
 
     if selected == "Graph":
         uploaded_file = st.session_state.uploaded_file
-        if uploaded_file is not None:
-            # Check if the uploaded file is a PCAP file
-            if uploaded_file.type == "application/octet-stream":
-                # Process the uploaded PCAP file
-                pcap_data = rdpcap(os.path.join(uploaded_file.name))
-                st.session_state.pcap_data = pcap_data
-                # Extract the data
-                all_data = get_all_pcap(pcap_data, PD)
-                
-                # Convert your PCAP data to a JSON string for JavaScript
-                import json
-                pcap_json = json.dumps(all_data)
-                
-                # Read the HTML template
-                with open('graph.html', 'r') as f:
-                    html_template = f.read()
-                
-                # Inject the data into the HTML
-                html_data = html_template.replace('const pcapData = {}', f'const pcapData = {pcap_json}')
-                
-                # Display the HTML with the data
-                components.html(html_data, height=1000)
+        if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
+            temp_file_path = f"/tmp/{uploaded_file.name}"
+            with open(temp_file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+            # Call your dpkt-based processor
+            dataframe_data = pcap_decode.process_pcap(temp_file_path)
+            st.session_state.pcap_data = dataframe_data
+            
+            pcap_json = json.dumps(dataframe_data.to_dict(orient='records'))
+
+            
+            # Read the HTML template
+            with open('graph.html', 'r') as f:
+                html_template = f.read()
+            
+            # Inject the data into the HTML
+            html_data = html_template.replace('const pcapData = {}', f'const pcapData = {pcap_json}')
+            
+            # Display the HTML with the data
+            components.html(html_data, height=1000)
         else:
             st.subheader("Upload a file to see the graph")
 
@@ -1228,12 +1184,6 @@ def main():
                     with st.expander("Total Protocol Packet Flow bar chart"):
                         TotalProtocolPacketFlowbarchart(proto_flow_dict)
 
-
-
-
-                # Inbound /Outbound
-
-
                 st.title("Inbound /Outbound ")
                 col5, col6 = st.columns(2)
                 with col5:
@@ -1255,9 +1205,6 @@ def main():
                     with st.expander("Outbound IP Total Traffic Chart"):
                         OutboundIPTotalTrafficChart(data_ip_dict)   #Bar CHart axis -90 # ip_flow['out_keyl'],ip_flow['out_len']
 
-
-
-
     if selected == "Geoplots":
         st.subheader("Geoplot")
         # ///////////////////////////////////////////
@@ -1274,14 +1221,6 @@ def main():
                 DrawFoliumMap(ipmap_result)
             else:
                 st.warning("No valid data for Geoplot.")
-
-
-
-
-
-
-
-
 
 if __name__ == "__main__":
     main()

@@ -427,7 +427,8 @@
             // Set initial control values
             let linkDistance = 150;
             let nodeCharge = -300;
-            let baseNodeSize = 8;
+            let baseNodeSize = 5;
+            let nodeMaxSize = 20;
             
             // Get the container dimensions
             const container = document.getElementById('graph');
@@ -474,7 +475,7 @@
                 .append("line")
                 .attr("stroke", d => protocolColors(d.protocol))
                 .attr("stroke-opacity", 0.6)
-                .attr("stroke-width", d => Math.sqrt(d.value) + 1);
+                .attr("stroke-width", d => Math.min(Math.sqrt(d.value) + 1, 10))
             
             // Create nodes
             let node = g.append("g")
@@ -527,7 +528,9 @@
             
             // Helper function to calculate node size based on frequency
             function calculateNodeSize(d) {
-                return baseNodeSize + Math.sqrt(d.count);
+                let maxSize = 50;
+                const size = baseNodeSize + Math.sqrt(d.count);
+                return Math.min(size, maxSize);
             }
             
             // Helper function to determine node color based on type
@@ -757,7 +760,7 @@
                 labels.style("opacity", 1);
                 link.style("opacity", 0.6)
                     .classed("protocol-link", false)
-                    .attr("stroke-width", d => Math.sqrt(d.value) + 1)
+                    .attr("stroke-width", d => Math.min(Math.sqrt(d.value) + 1, 10))
                     .attr("x1", d => d.source.x)
                     .attr("y1", d => d.source.y)
                     .attr("x2", d => d.target.x)
@@ -1017,7 +1020,7 @@
                     .append("line")
                     .attr("stroke", d => protocolColors(d.protocol))
                     .attr("stroke-opacity", 0.6)
-                    .attr("stroke-width", d => Math.sqrt(d.value) + 1);
+                    .attr("stroke-width", d => Math.min(Math.sqrt(d.value) + 1, 10))
                 
                 // Create new nodes
                 node = g.append("g")
