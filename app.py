@@ -987,9 +987,6 @@ def main():
         key="menu_4"
     )
 
-    print(st.session_state["menu_option"])
-    print(selected)
-
     # Intro Page
     if selected == "Home":
         # Page header
@@ -1009,17 +1006,7 @@ def main():
     if selected == "Graph":
         uploaded_file = st.session_state.uploaded_file
         if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
-            temp_file_path = f"/tmp/{uploaded_file.name}"
-            with open(temp_file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-
-            # Call your dpkt-based processor
-            dataframe_data = pcap_decode.process_pcap(temp_file_path)
-            st.session_state.pcap_data = dataframe_data
-            
-            pcap_json = json.dumps(dataframe_data.to_dict(orient='records'))
-
-            
+            pcap_json = json.dumps(st.session_state.pcap_data.to_dict(orient='records'))
             # Read the HTML template
             with open('graph.html', 'r') as f:
                 html_template = f.read()
