@@ -1,228 +1,151 @@
-#coding:UTF-8
-__author__ = 'dj'
-
-from scapy.all import *
-import time
-import requests
+import dpkt
+import socket
+import pandas as pd
+import datetime
 from mac_vendor_lookup import MacLookup
 
-
-class PcapDecode:
+class FastPcapDecode:
     def __init__(self):
-        #ETHER:读取以太网层协议配置文件
-        with open('utils/protocol/ETHER', 'r', encoding='UTF-8') as f:
-            ethers = f.readlines()
-        self.ETHER_DICT = dict()
-        for ether in ethers:
-            ether = ether.strip().strip('\n').strip('\r').strip('\r\n')
-            self.ETHER_DICT[int(ether.split(':')[0])] = ether.split(':')[1]
+        self.mac_lookup = MacLookup()
+        self.mac_cache = {}
 
-        #IP:读取IP层协议配置文件
-        with open('utils/protocol/IP', 'r', encoding='UTF-8') as f:
-            ips = f.readlines()
-        self.IP_DICT = dict()
-        for ip in ips:
-            ip = ip.strip().strip('\n').strip('\r').strip('\r\n')
-            self.IP_DICT[int(ip.split(':')[0])] = ip.split(':')[1]
+        # Load protocol mappings
+        self.ETHER_DICT = self._load_dict('utils/protocol/ETHER')
+        self.IP_DICT = self._load_dict('utils/protocol/IP')
+        self.PORT_DICT = self._load_dict('utils/protocol/PORT')
+        self.TCP_DICT = self._load_dict('utils/protocol/TCP')
+        self.UDP_DICT = self._load_dict('utils/protocol/UDP')
 
-        #PORT:读取应用层协议端口配置文件
-        with open('utils/protocol/PORT', 'r', encoding='UTF-8') as f:
-            ports = f.readlines()
-        self.PORT_DICT = dict()
-        for port in ports:
-            port = port.strip().strip('\n').strip('\r').strip('\r\n')
-            self.PORT_DICT[int(port.split(':')[0])] = port.split(':')[1]
+    def _load_dict(self, path):
+        proto_dict = {}
+        try:
+            with open(path, 'r', encoding='UTF-8') as f:
+                for line in f:
+                    parts = line.strip().split(':')
+                    if len(parts) == 2:
+                        proto_dict[int(parts[0])] = parts[1]
+        except Exception:
+            pass
+        return proto_dict
 
-        #TCP:读取TCP层协议配置文件
-        with open('utils/protocol/TCP', 'r', encoding='UTF-8') as f:
-            tcps = f.readlines()
-        self.TCP_DICT = dict()
-        for tcp in tcps:
-            tcp = tcp.strip().strip('\n').strip('\r').strip('\r\n')
-            self.TCP_DICT[int(tcp.split(':')[0])] = tcp.split(':')[1]
-
-        #UDP:读取UDP层协议配置文件
-        with open('utils/protocol/UDP', 'r', encoding='UTF-8') as f:
-            udps = f.readlines()
-        self.UDP_DICT = dict()
-        for udp in udps:
-            udp = udp.strip().strip('\n').strip('\r').strip('\r\n')
-            self.UDP_DICT[int(udp.split(':')[0])] = udp.split(':')[1]
-
-    def get_mac_vendor(self, mac_address):
-        if not mac_address or mac_address == 'Unknown':
+    def get_mac_vendor(self, mac):
+        if not mac or mac == 'Unknown':
             return "Unknown"
-        return 'unknown'
+        if mac in self.mac_cache:
+            return self.mac_cache[mac]
+        try:
+            vendor = self.mac_lookup.lookup(mac)
+            self.mac_cache[mac] = vendor
+            return vendor
+        except Exception:
+            return "Unknown"
 
-    #解析以太网层协议
-    def ether_decode(self, p):
-        data = dict()
-        if p.haslayer(Ether):
-            # Store MAC addresses if available
-            data['src_mac'] = p[Ether].src
-            data['dst_mac'] = p[Ether].dst
-            
-            # Add vendor information
-            data['vendor'] = self.get_mac_vendor(data['src_mac'])
-            
-            data = self.ip_decode(p)
-            
-            # Make sure vendor info is preserved from above
-            if 'vendor' not in data:
-                data['vendor'] = self.get_mac_vendor(data['src_mac'])
-                
-            return data
-        else:
-            data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-            data['Source'] = 'Unknow'
-            data['Destination'] = 'Unknow'
-            data['src_mac'] = 'Unknown'
-            data['dst_mac'] = 'Unknown'
-            data['vendor'] = 'Unknown'
-            data['Procotol'] = 'Unknow'
-            data['len'] = len(corrupt_bytes(p))
-            data['info'] = p.summary()
-            return data
+    def mac_addr(self, mac_bytes):
+        return ':'.join('%02x' % b for b in mac_bytes)
 
-    #解析IP层协议
-    def ip_decode(self, p):
-        data = dict()
-        # If we're starting from this method directly, make sure we capture MAC addresses if they exist
-        if p.haslayer(Ether) and 'src_mac' not in data:
-            data['src_mac'] = p[Ether].src
-            data['dst_mac'] = p[Ether].dst
-            data['vendor'] = self.get_mac_vendor(data['src_mac'])
-        elif 'src_mac' not in data:
-            data['src_mac'] = 'Unknown'
-            data['dst_mac'] = 'Unknown'
-            data['vendor'] = 'Unknown'
-            
-        if p.haslayer(IP):  #2048:Internet IP (IPv4)
-            ip = p.getlayer(IP)
-            if p.haslayer(TCP):  #6:TCP
-                data = self.tcp_decode(p, ip)
-                return data
-            elif p.haslayer(UDP): #17:UDP
-                data = self.udp_decode(p, ip)
-                return data
-            else:
-                if ip.proto in self.IP_DICT:
-                    data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-                    data['Source'] = ip.src
-                    data['Destination'] = ip.dst
-                    data['Procotol'] = self.IP_DICT[ip.proto]
-                    data['len'] = len(corrupt_bytes(p))
-                    data['info'] = p.summary()
-                    return data
-                else:
-                    data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-                    data['Source'] = ip.src
-                    data['Destination'] = ip.dst
-                    data['Procotol'] = 'IPv4'
-                    data['len'] = len(corrupt_bytes(p))
-                    data['info'] = p.summary()
-                    return data
-        elif p.haslayer(IPv6):  #34525:IPv6
-            ipv6 = p.getlayer(IPv6)
-            if p.haslayer(TCP):  #6:TCP
-                data = self.tcp_decode(p, ipv6)
-                return data
-            elif p.haslayer(UDP): #17:UDP
-                data = self.udp_decode(p, ipv6)
-                return data
-            else:
-                if ipv6.nh in self.IP_DICT:
-                    data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-                    data['Source'] = ipv6.src
-                    data['Destination'] = ipv6.dst
-                    data['Procotol'] = self.IP_DICT[ipv6.nh]
-                    data['len'] = len(corrupt_bytes(p))
-                    data['info'] = p.summary()
-                    return data
-                else:
-                    data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-                    data['Source'] = ipv6.src
-                    data['Destination'] = ipv6.dst
-                    data['Procotol'] = 'IPv6'
-                    data['len'] = len(corrupt_bytes(p))
-                    data['info'] = p.summary()
-                    return data
-        else:
-            if p.type in self.ETHER_DICT:
-                data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-                data['Source'] = p.src
-                data['Destination'] = p.dst
-                data['Procotol'] = self.ETHER_DICT[p.type]
-                data['len'] = len(corrupt_bytes(p))
-                data['info'] = p.summary()
-                return data
-            else:
-                data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-                data['Source'] = p.src
-                data['Destination'] = p.dst
-                data['Procotol'] = hex(p.type)
-                data['len'] = len(corrupt_bytes(p))
-                data['info'] = p.summary()
-                return data
+    def ip_to_str(self, ip_bytes):
+        try:
+            return socket.inet_ntop(socket.AF_INET, ip_bytes)
+        except Exception:
+            try:
+                return socket.inet_ntop(socket.AF_INET6, ip_bytes)
+            except Exception:
+                return 'Unknown'
 
-    #解析TCP层协议
-    def tcp_decode(self, p, ip):
-        data = dict()
-        # Ensure MAC addresses are included if available
-        if p.haslayer(Ether):
-            data['src_mac'] = p[Ether].src
-            data['dst_mac'] = p[Ether].dst
-            data['vendor'] = self.get_mac_vendor(data['src_mac'])
-        else:
-            data['src_mac'] = 'Unknown'
-            data['dst_mac'] = 'Unknown'
-            data['vendor'] = 'Unknown'
-            
-        tcp = p.getlayer(TCP)
-        data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-        data['Source'] = ip.src + ":" + str(tcp.sport)
-        data['Destination'] = ip.dst + ":" + str(tcp.dport)
-        data['len'] = len(corrupt_bytes(p))
-        data['info'] = p.summary()
-        if tcp.dport in self.PORT_DICT:
-            data['Procotol'] = self.PORT_DICT[tcp.dport]
-        elif tcp.sport in self.PORT_DICT:
-            data['Procotol'] = self.PORT_DICT[tcp.sport]
-        elif tcp.dport in self.TCP_DICT:
-            data['Procotol'] = self.TCP_DICT[tcp.dport]
-        elif tcp.sport in self.TCP_DICT:
-            data['Procotol'] = self.TCP_DICT[tcp.sport]
-        else:
-            data['Procotol'] = "TCP"
-        return data
+    def process_pcap(self, file_path):
+        rows = []
 
-    #解析UDP层协议
-    def udp_decode(self, p, ip):
-        data = dict()
-        # Ensure MAC addresses are included if available
-        if p.haslayer(Ether):
-            data['src_mac'] = p[Ether].src
-            data['dst_mac'] = p[Ether].dst
-            data['vendor'] = self.get_mac_vendor(data['src_mac'])
-        else:
-            data['src_mac'] = 'Unknown'
-            data['dst_mac'] = 'Unknown'
-            data['vendor'] = 'Unknown'
-            
-        udp = p.getlayer(UDP)
-        data['time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(p.time)))
-        data['Source'] = ip.src + ":" + str(udp.sport)
-        data['Destination'] = ip.dst + ":" + str(udp.dport)
-        data['len'] = len(corrupt_bytes(p))
-        data['info'] = p.summary()
-        if udp.dport in self.PORT_DICT:
-            data['Procotol'] = self.PORT_DICT[udp.dport]
-        elif udp.sport in self.PORT_DICT:
-            data['Procotol'] = self.PORT_DICT[udp.sport]
-        elif udp.dport in self.UDP_DICT:
-            data['Procotol'] = self.UDP_DICT[udp.dport]
-        elif udp.sport in self.UDP_DICT:
-            data['Procotol'] = self.UDP_DICT[udp.sport]
-        else:
-            data['Procotol'] = "UDP"
-        return data
+        with open(file_path, 'rb') as f:
+            pcap = dpkt.pcap.Reader(f)
+
+            for timestamp, buf in pcap:
+                row = {
+                    'time': datetime.datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S'),
+                    'src_mac': 'Unknown',
+                    'dst_mac': 'Unknown',
+                    'src_vendor': 'Unknown',
+                    'dst_vendor': 'Unknown',
+                    'Source': 'Unknown',
+                    'Destination': 'Unknown',
+                    'Protocol': 'Unknown',
+                    'len': len(buf),
+                    'info': 'Unknown'
+                }
+
+                try:
+                    eth = dpkt.ethernet.Ethernet(buf)
+                    row['src_mac'] = self.mac_addr(eth.src)
+                    row['dst_mac'] = self.mac_addr(eth.dst)
+                    row['src_vendor'] = self.get_mac_vendor(row['src_mac'])
+                    row['dst_vendor'] = self.get_mac_vendor(row['dst_mac'])
+
+                    row['info'] = str(eth.__class__.__name__)
+
+                    # IP v4
+                    if isinstance(eth.data, dpkt.ip.IP):
+                        ip = eth.data
+                        src_ip = self.ip_to_str(ip.src)
+                        dst_ip = self.ip_to_str(ip.dst)
+
+                        row['Source'] = src_ip
+                        row['Destination'] = dst_ip
+
+                        # TCP
+                        if isinstance(ip.data, dpkt.tcp.TCP):
+                            tcp = ip.data
+                            row['Source'] = f"{src_ip}:{tcp.sport}"
+                            row['Destination'] = f"{dst_ip}:{tcp.dport}"
+                            row['Protocol'] = self.PORT_DICT.get(tcp.dport) or \
+                                              self.PORT_DICT.get(tcp.sport) or \
+                                              self.TCP_DICT.get(tcp.dport) or \
+                                              self.TCP_DICT.get(tcp.sport) or 'TCP'
+                        # UDP
+                        elif isinstance(ip.data, dpkt.udp.UDP):
+                            udp = ip.data
+                            row['Source'] = f"{src_ip}:{udp.sport}"
+                            row['Destination'] = f"{dst_ip}:{udp.dport}"
+                            row['Protocol'] = self.PORT_DICT.get(udp.dport) or \
+                                              self.PORT_DICT.get(udp.sport) or \
+                                              self.UDP_DICT.get(udp.dport) or \
+                                              self.UDP_DICT.get(udp.sport) or 'UDP'
+                        else:
+                            row['Protocol'] = self.IP_DICT.get(ip.p, f"IP:{ip.p}")
+
+                    # IP v6
+                    elif isinstance(eth.data, dpkt.ip6.IP6):
+                        ip6 = eth.data
+                        src_ip = self.ip_to_str(ip6.src)
+                        dst_ip = self.ip_to_str(ip6.dst)
+
+                        row['Source'] = src_ip
+                        row['Destination'] = dst_ip
+
+                        if isinstance(ip6.data, dpkt.tcp.TCP):
+                            tcp = ip6.data
+                            row['Source'] = f"{src_ip}:{tcp.sport}"
+                            row['Destination'] = f"{dst_ip}:{tcp.dport}"
+                            row['Protocol'] = self.PORT_DICT.get(tcp.dport) or \
+                                              self.PORT_DICT.get(tcp.sport) or \
+                                              self.TCP_DICT.get(tcp.dport) or \
+                                              self.TCP_DICT.get(tcp.sport) or 'TCP'
+                        elif isinstance(ip6.data, dpkt.udp.UDP):
+                            udp = ip6.data
+                            row['Source'] = f"{src_ip}:{udp.sport}"
+                            row['Destination'] = f"{dst_ip}:{udp.dport}"
+                            row['Protocol'] = self.PORT_DICT.get(udp.dport) or \
+                                              self.PORT_DICT.get(udp.sport) or \
+                                              self.UDP_DICT.get(udp.dport) or \
+                                              self.UDP_DICT.get(udp.sport) or 'UDP'
+                        else:
+                            row['Protocol'] = self.IP_DICT.get(ip6.nxt, f"IPv6:{ip6.nxt}")
+
+                    else:
+                        row['Protocol'] = self.ETHER_DICT.get(eth.type, f"Ether:{hex(eth.type)}")
+
+                except Exception as e:
+                    row['Protocol'] = 'Corrupt'
+                    row['info'] = str(e)
+
+                rows.append(row)
+
+        return pd.DataFrame(rows)

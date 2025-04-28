@@ -46,6 +46,12 @@
             padding: 15px;
             border-left: 1px solid #ddd;
             overflow-y: auto;
+            transition: width 0.3s ease;
+        }
+        .sidebar.collapsed {
+            width: 0;
+            padding: 0;
+            overflow: hidden;
         }
         .control-group {
             margin-bottom: 20px;
@@ -56,9 +62,12 @@
             color: #2c3e50;
             font-size: 16px;
         }
-        input[type="range"], select {
+        input[type="range"], select, input[type="text"] {
             width: 100%;
             margin: 5px 0;
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
         }
         .footer {
             background-color: #f1f1f1;
@@ -77,6 +86,7 @@
             left: 10px;
             max-width: 300px;
             display: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .stat-box {
             background-color: #fff;
@@ -84,6 +94,7 @@
             border-radius: 4px;
             padding: 10px;
             margin-bottom: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
         .stat-box h4 {
             margin-top: 0;
@@ -94,10 +105,11 @@
             background-color: #3498db;
             color: white;
             border: none;
-            padding: 5px 10px;
+            padding: 8px 12px;
             border-radius: 4px;
             cursor: pointer;
             margin: 2px;
+            transition: background-color 0.2s;
         }
         button:hover {
             background-color: #2980b9;
@@ -119,6 +131,71 @@
             margin-right: 5px;
             border-radius: 50%;
         }
+        .protocol-link {
+            stroke-width: 3;
+            stroke-dasharray: 0;
+            opacity: 0.8;
+        }
+        .selected-node {
+            stroke: #ff6b6b;
+            stroke-width: 3px;
+        }
+        .node-tooltip {
+            position: absolute;
+            background-color: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 10;
+            display: none;
+        }
+        .protocol-legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            margin-top: 15px;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            z-index: 100;
+            max-width: 300px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .protocol-legend h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .toggle-sidebar {
+            position: absolute;
+            top: 50%;
+            right: 2px;
+            transform: translateY(-50%);
+            z-index: 1000;
+            width: 20px;
+            height: 60px;
+            background-color: #2c3e50;
+            border: none;
+            border-radius: 4px 0 0 4px;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            transition: right 0.3s ease;
+        }
+        .toggle-sidebar.sidebar-hidden {
+            right: 0;
+        }
+        .toggle-sidebar:hover {
+            background-color: #34495e;
+        }
+        .toggle-sidebar:focus {
+            outline: none;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 </head>
@@ -131,8 +208,16 @@
             <div class="graph-container">
                 <div id="graph"></div>
                 <div class="node-info" id="nodeInfo"></div>
+                <div class="node-tooltip" id="nodeTooltip"></div>
+                <div class="protocol-legend" id="protocolLegend" style="display: none;">
+                    <h4>Protocol Legend</h4>
+                    <div id="protocolItems"></div>
+                </div>
+                <button id="toggleSidebar" class="toggle-sidebar">
+                    &lt;
+                </button>
             </div>
-            <div class="sidebar">
+            <div class="sidebar" id="sidebar">
                 <div class="stat-box">
                     <h4>Network Statistics</h4>
                     <div id="stats">
@@ -148,46 +233,45 @@
                     <label for="linkDistance">Link Distance:</label>
                     <input type="range" id="linkDistance" min="10" max="300" value="150">
                     
-                    <label for="nodeCharge">Node Repulsion:</label>
+                    <label for="nodeCharge">Node Attraction:</label>
                     <input type="range" id="nodeCharge" min="-1000" max="0" value="-300">
-                </div>
-                
-                <div class="control-group">
-                    <h3>Visualization Settings</h3>
-                    <label for="nodeSize">Base Node Size:</label>
+                    
+                    <label for="nodeSize">Node Size:</label>
                     <input type="range" id="nodeSize" min="2" max="20" value="8">
-                    
-                    <label for="nodeSizeMultiplier">Size Multiplier:</label>
-                    <input type="range" id="nodeSizeMultiplier" min="1" max="10" value="3">
-                    
-                    <label for="colorScheme">Color Scheme:</label>
-                    <select id="colorScheme">
-                        <option value="category10">Category 10</option>
-                        <option value="accent">Accent</option>
-                        <option value="paired">Paired</option>
-                        <option value="set1">Set 1</option>
-                        <option value="set2">Set 2</option>
-                        <option value="set3">Set 3</option>
-                    </select>
                 </div>
                 
                 <div class="control-group">
                     <h3>Filter</h3>
-                    <label for="ipFilter">Filter by IP:</label>
-                    <input type="text" id="ipFilter" placeholder="Enter IP address" style="width: 100%; margin-bottom: 5px;">
+                    <label for="protocolFilter">Filter by Protocol:</label>
+                    <select id="protocolFilter" style="width: 100%; margin-bottom: 5px;">
+                        <option value="">-- Select Protocol --</option>
+                    </select>
+                    
+                    <label for="searchFilter">Search by IP:</label>
+                    <input type="text" id="searchFilter" placeholder="Enter IP address" style="width: 100%; margin-bottom: 5px;">
                     <button id="applyFilter">Apply Filter</button>
                     <button id="resetFilter">Reset</button>
                 </div>
                 
                 <div class="control-group">
+                    <h3>Selected Node Information</h3>
+                    <div id="selectedNodeInfo">
+                        <p>Click on nodes to select them</p>
+                        <p id="selectedCount">0 nodes selected</p>
+                        <button id="clearSelection" disabled>Clear Selection</button>
+                    </div>
+                </div>
+                
+                <div class="control-group">
                     <h3>Legend</h3>
-                    <div class="legend" id="legendContainer"></div>
+                    <h4>Nodes</h4>
+                    <div class="legendNode" id="legendNodeContainer"></div>
+                    <h4>Links</h4>
+                    <div class="legendLink" id="legendLinkContainer"></div>
                 </div>
                 
                 <div class="control-group">
                     <h3>Actions</h3>
-                    <button id="pauseSimulation">Pause Physics</button>
-                    <button id="resetSimulation">Reset Layout</button>
                     <button id="exportSVG">Export as SVG</button>
                 </div>
             </div>
@@ -198,7 +282,6 @@
     </div>
 
     <script>
-        // Sample data from your provided PCAP information
         const pcapData = {}
 
         // Process the data to extract unique IPs and calculate frequencies
@@ -206,19 +289,22 @@
             const nodes = new Map();
             const links = [];
             const ipCounts = {};
+            const protocolCounts = {};
             
             // Helper function to extract the base IP without port
             function extractBaseIP(fullIP) {
                 return fullIP.split(':')[0];
             }
             
-            // Count occurrences of each IP
+            // Count occurrences of each IP and protocol
             Object.values(data).forEach(packet => {
                 const sourceIP = extractBaseIP(packet.Source);
                 const destIP = extractBaseIP(packet.Destination);
-                
+                const protocol = packet.Protocol || "Unknown";
                 ipCounts[sourceIP] = (ipCounts[sourceIP] || 0) + 1;
                 ipCounts[destIP] = (ipCounts[destIP] || 0) + 1;
+                
+                protocolCounts[protocol] = (protocolCounts[protocol] || 0) + 1;
             });
             
             // Create nodes
@@ -227,39 +313,55 @@
                 let type = "both";
                 const isSource = Object.values(data).some(p => extractBaseIP(p.Source) === ip);
                 const isDest = Object.values(data).some(p => extractBaseIP(p.Destination) === ip);
+                const matchingPacket = Object.values(data).find(p =>
+                    extractBaseIP(p.Source) === ip || extractBaseIP(p.Destination) === ip
+                );
+                let vendor = 'Unknown';
                 
-                if (isSource && !isDest) type = "source";
-                else if (!isSource && isDest) type = "destination";
-                
+                if (isSource && !isDest) {
+                    type = "source";
+                    vendor = matchingPacket?.src_vendor || "Unknown";
+                }
+                else if (!isSource && isDest) {
+                    type = "destination";
+                    vendor = matchingPacket?.dst_vendor || "Unknown";
+                }
+                if (type === 'both') {
+                    const sourcePackets = Object.values(data).filter(p => extractBaseIP(p.Source) === ip);
+                    vendor = sourcePackets[0].src_vendor;
+                }
+                // Add node
                 nodes.set(ip, {
                     id: ip,
                     count: ipCounts[ip],
-                    type: type
+                    type: type,
+                    vendor: vendor
                 });
             });
             
-            // Create links
-            const uniqueLinks = new Set();
+            // Create links with protocol information
+            const linkMap = new Map();
             
             Object.values(data).forEach(packet => {
                 const sourceIP = extractBaseIP(packet.Source);
                 const destIP = extractBaseIP(packet.Destination);
-                const linkKey = `${sourceIP}-${destIP}`;
+                const protocol = packet.Protocol || "Unknown";
+                const linkKey = `${sourceIP}-${destIP}-${protocol}`;
                 
-                if (!uniqueLinks.has(linkKey)) {
-                    uniqueLinks.add(linkKey);
-                    links.push({
+                if (!linkMap.has(linkKey)) {
+                    linkMap.set(linkKey, {
                         source: sourceIP,
                         target: destIP,
-                        protocol: packet.Procotol,
-                        value: 1  // Initial value, will be updated
+                        protocol: protocol,
+                        value: 1
                     });
                 } else {
-                    // Increment link value if it already exists
-                    const link = links.find(l => l.source === sourceIP && l.target === destIP);
-                    if (link) link.value++;
+                    linkMap.get(linkKey).value++;
                 }
             });
+            
+            links.push(...linkMap.values());
+
             
             // Find most active IPs
             let maxCount = 0;
@@ -289,7 +391,8 @@
                     totalPackets: Object.keys(data).length,
                     uniqueIPs: nodes.size,
                     mostActiveSource: mostActiveSource,
-                    mostActiveDest: mostActiveDest
+                    mostActiveDest: mostActiveDest,
+                    protocols: Object.keys(protocolCounts)
                 }
             };
         }
@@ -302,7 +405,9 @@
                 nodes: [...processedData.nodes],
                 links: [...processedData.links]
             };
+            
             let simulation;
+            let selectedNodes = [];
             
             // Update statistics
             document.getElementById('totalPackets').textContent = processedData.stats.totalPackets;
@@ -310,12 +415,20 @@
             document.getElementById('activeSource').textContent = processedData.stats.mostActiveSource || "-";
             document.getElementById('activeDest').textContent = processedData.stats.mostActiveDest || "-";
             
+            // Populate protocol dropdown
+            const protocolFilter = document.getElementById('protocolFilter');
+            processedData.stats.protocols.forEach(protocol => {
+                const option = document.createElement('option');
+                option.value = protocol;
+                option.textContent = protocol;
+                protocolFilter.appendChild(option);
+            });
+            
             // Set initial control values
             let linkDistance = 150;
             let nodeCharge = -300;
-            let baseNodeSize = 8;
-            let nodeSizeMultiplier = 3;
-            let colorScheme = "category10";
+            let baseNodeSize = 5;
+            let nodeMaxSize = 20;
             
             // Get the container dimensions
             const container = document.getElementById('graph');
@@ -328,15 +441,17 @@
                 .attr("width", width)
                 .attr("height", height);
             
-            // Define color scales
-            const colorScales = {
-                category10: d3.scaleOrdinal(d3.schemeCategory10),
-                accent: d3.scaleOrdinal(d3.schemeAccent),
-                paired: d3.scaleOrdinal(d3.schemePaired),
-                set1: d3.scaleOrdinal(d3.schemeSet1),
-                set2: d3.scaleOrdinal(d3.schemeSet2),
-                set3: d3.scaleOrdinal(d3.schemeSet3)
+            // Better color scheme
+            const nodeColors = {
+                source: "#4CAF50",     // Green
+                destination: "#2196F3", // Blue
+                both: "#9C27B0"        // Purple
             };
+            
+            // Protocol colors
+            const protocolColors = d3.scaleOrdinal()
+                .domain(processedData.stats.protocols)
+                .range(["#f44336", "#2196F3", "#FF9800", "#4CAF50", "#E91E63", "#009688", "#673AB7", "#FFC107"]);
             
             // Create a group for the graph elements
             const g = svg.append("g");
@@ -350,17 +465,21 @@
             
             svg.call(zoom);
             
-            // Create links and nodes
-            const link = g.append("g")
-                .selectAll("line")
+            // Create a container for links
+            const linkGroup = g.append("g").attr("class", "links");
+            
+            // Create links
+            let link = linkGroup.selectAll("line")
                 .data(graphData.links)
                 .enter()
                 .append("line")
-                .attr("stroke", "#999")
+                .attr("stroke", d => protocolColors(d.protocol))
                 .attr("stroke-opacity", 0.6)
-                .attr("stroke-width", d => Math.sqrt(d.value));
+                .attr("stroke-width", d => Math.min(Math.sqrt(d.value) + 1, 10))
             
-            const node = g.append("g")
+            // Create nodes
+            let node = g.append("g")
+                .attr("class", "nodes")
                 .selectAll("circle")
                 .data(graphData.nodes)
                 .enter()
@@ -369,13 +488,14 @@
                 .attr("fill", d => getNodeColor(d))
                 .attr("stroke", "#fff")
                 .attr("stroke-width", 1.5)
+                .attr("cursor", "pointer")
                 .call(d3.drag()
                     .on("start", dragstarted)
                     .on("drag", dragged)
                     .on("end", dragended));
             
             // Add text labels for larger nodes
-            const labels = g.append("g")
+            let labels = g.append("g")
                 .selectAll("text")
                 .data(graphData.nodes)
                 .enter()
@@ -384,7 +504,10 @@
                 .attr("font-size", 10)
                 .attr("dx", 12)
                 .attr("dy", 4)
-                .style("pointer-events", "none");
+                .style("pointer-events", "none")
+                .style("fill", "#333")
+                .style("font-weight", "bold")
+                .style("text-shadow", "0 0 3px white");
             
             // Initialize simulation
             simulation = d3.forceSimulation(graphData.nodes)
@@ -395,20 +518,24 @@
                 .force("y", d3.forceY(height / 2).strength(0.1))
                 .on("tick", ticked);
             
+            // Tooltip element for quick node info
+            const tooltip = d3.select("#nodeTooltip");
+            
             // Handle node information display
-            node.on("mouseover", showNodeInfo)
-                .on("mouseout", hideNodeInfo);
+            node.on("mouseover", showNodeTooltip)
+                .on("mouseout", hideNodeTooltip)
+                .on("click", handleNodeClick);
             
             // Helper function to calculate node size based on frequency
             function calculateNodeSize(d) {
-                return baseNodeSize + Math.sqrt(d.count) * nodeSizeMultiplier;
+                let maxSize = 50;
+                const size = baseNodeSize + Math.sqrt(d.count);
+                return Math.min(size, maxSize);
             }
             
             // Helper function to determine node color based on type
             function getNodeColor(d) {
-                if (d.type === "source") return colorScales[colorScheme](0);
-                if (d.type === "destination") return colorScales[colorScheme](1);
-                return colorScales[colorScheme](2); // for "both"
+                return nodeColors[d.type];
             }
             
             // Update positions on each tick
@@ -446,51 +573,251 @@
                 d.fy = null;
             }
             
-            // Show node information on hover
-            function showNodeInfo(event, d) {
+            // Show node tooltip on hover
+            function showNodeTooltip(event, d) {
+                const [x, y] = d3.pointer(event, svg.node());
+                const outgoingLinks = graphData.links.filter(l => l.source.id === d.id)
+                let outgoingSignals = 0
+                outgoingLinks.forEach(link => {
+                    outgoingSignals += link.value
+                })
+
+                const incomingLinks = graphData.links.filter(l => l.target.id === d.id)
+                let incomingSignals = 0
+                incomingLinks.forEach(link => {
+                    incomingSignals += link.value
+                })
+                
+                tooltip.style("left", (x + 10) + "px")
+                      .style("top", (y + 10) + "px")
+                      .style("display", "block")
+                      .html(`<strong>${d.id}</strong> (${d.type})`);
+                
+                // Show detailed info in the sidebar
                 const nodeInfo = document.getElementById('nodeInfo');
                 nodeInfo.innerHTML = `
                     <strong>IP: ${d.id}</strong><br>
                     Type: ${d.type}<br>
-                    Occurrences: ${d.count}<br>
-                    ${d.type !== "destination" ? `Outgoing connections: ${graphData.links.filter(l => l.source.id === d.id).length}<br>` : ''}
-                    ${d.type !== "source" ? `Incoming connections: ${graphData.links.filter(l => l.target.id === d.id).length}` : ''}
+                    Occurrences: ${incomingSignals + outgoingSignals}<br><br>
+                    Outgoing connections: ${graphData.links.filter(l => l.source.id === d.id).length}<br>
+                    outgoing signals: ${outgoingSignals}<br>
+                    Incoming connections: ${graphData.links.filter(l => l.target.id === d.id).length}<br>
+                    Incoming signals: ${incomingSignals}<br><br>
+                    Vendor: ${d.vendor}
                 `;
                 nodeInfo.style.display = 'block';
             }
             
-            function hideNodeInfo() {
+            function hideNodeTooltip() {
+                tooltip.style("display", "none");
                 document.getElementById('nodeInfo').style.display = 'none';
             }
             
-            // Create legend
+            // Handle node click for selection
+            function handleNodeClick(event, d) {
+                // If node is already selected, remove it from selection
+                const index = selectedNodes.findIndex(n => n.id === d.id);
+                
+                if (index > -1) {
+                    selectedNodes.splice(index, 1);
+                    d3.select(this).classed("selected-node", false);
+                } else {
+                    // If we already have 2 nodes selected, remove the first one
+                    if (selectedNodes.length >= 2) {
+                        const oldNode = selectedNodes.shift();
+                        node.filter(n => n.id === oldNode.id).classed("selected-node", false);
+                    }
+                    
+                    // Add the new node to selection
+                    selectedNodes.push(d);
+                    d3.select(this).classed("selected-node", true);
+                }
+                
+                // Update selection count
+                document.getElementById("selectedCount").textContent = `${selectedNodes.length} node(s) selected`;
+                
+                // Enable/disable clear button
+                document.getElementById("clearSelection").disabled = selectedNodes.length === 0;
+                
+                // If we have exactly 2 nodes selected, show connections between them
+                if (selectedNodes.length === 2) {
+                    showConnectionsBetweenNodes(selectedNodes[0], selectedNodes[1]);
+                } else {
+                    // Otherwise reset to show all links
+                    resetGraphVisibility();
+                }
+            }
+            
+            // Show connections between two selected nodes
+            function showConnectionsBetweenNodes(node1, node2) {
+                // Dim all nodes except the selected ones
+                node.style("opacity", n => 
+                    (n.id === node1.id || n.id === node2.id) ? 1 : 0.2);
+                
+                // Hide all labels except for selected nodes
+                labels.style("opacity", n => 
+                    (n.id === node1.id || n.id === node2.id) ? 1 : 0);
+                
+                // Find all links between the two nodes
+                const nodeLinks = graphData.links.filter(l => 
+                    (l.source.id === node1.id && l.target.id === node2.id) || 
+                    (l.source.id === node2.id && l.target.id === node1.id)
+                );
+
+                // Hide all links except those between the selected nodes
+                link.style("opacity", l => 
+                    ((l.source.id === node1.id && l.target.id === node2.id) || 
+                     (l.source.id === node2.id && l.target.id === node1.id)) ? 1 : 0.1);
+                
+                // Group links by protocol
+                const protocolGroups = {};
+                nodeLinks.forEach(l => {
+                    if (!protocolGroups[l.protocol]) {
+                        protocolGroups[l.protocol] = [];
+                    }
+                    protocolGroups[l.protocol].push(l);
+                });
+                
+                // Update protocol legend
+                updateProtocolLegend(protocolGroups);
+                
+                // Visually separate links by protocol (offset them slightly)
+                const protocols = Object.keys(protocolGroups);
+                protocols.forEach((protocol, i) => {
+                    const offset = (i - (protocols.length - 1) / 2) * 5;
+                    
+                    link.filter(l => l.protocol === protocol && 
+                        ((l.source.id === node1.id && l.target.id === node2.id) || 
+                         (l.source.id === node2.id && l.target.id === node1.id)))
+                        .classed("protocol-link", true)
+                        .attr("stroke", protocolColors(protocol))
+                        .attr("stroke-opacity", 0.8)
+                        .attr("stroke-width", 3)
+                        .each(function(d) {
+                            const x1 = d.source.x;
+                            const y1 = d.source.y;
+                            const x2 = d.target.x;
+                            const y2 = d.target.y;
+                            const dx = x2 - x1;
+                            const dy = y2 - y1;
+                            const length = Math.sqrt(dx * dx + dy * dy);
+                                
+                            // Calculate perpendicular offset
+                            const offsetX = -dy / length * offset;
+                            const offsetY = dx / length * offset;
+                                
+                            d3.select(this)
+                              .attr("x1", x1 + offsetX)
+                              .attr("y1", y1 + offsetY)
+                              .attr("x2", x2 + offsetX)
+                              .attr("y2", y2 + offsetY);
+                        });
+                });
+            }
+            
+            // Update protocol legend when showing connections
+            function updateProtocolLegend(protocolGroups) {
+                const protocolLegend = document.getElementById("protocolLegend");
+                const protocolItems = document.getElementById("protocolItems");
+                                
+                // Clear previous items
+                protocolItems.innerHTML = "";
+                
+                // If we have protocols to show
+                if (Object.keys(protocolGroups).length > 0) {
+                    protocolLegend.style.display = "block";
+                    
+                    // Create legend items for each protocol
+                    Object.keys(protocolGroups).forEach(protocol => {
+                        let linkSignals = 0
+                        protocolGroups[protocol].forEach(link => {
+                            linkSignals += link.value
+                        })
+                        const item = document.createElement("div");
+                        item.className = "legend-item";
+                        
+                        const colorBox = document.createElement("div");
+                        colorBox.className = "legend-color";
+                        colorBox.style.backgroundColor = protocolColors(protocol);
+                        
+                        const label = document.createElement("span");
+                        label.innerHTML = `${protocol} (${protocolGroups[protocol].length} connections)<br>${linkSignals} signals`;
+
+
+
+                        item.appendChild(colorBox);
+                        item.appendChild(label);
+                        protocolItems.appendChild(item);
+                    });
+                } else {
+                    protocolLegend.style.display = "none";
+                }
+            }
+            
+            // Reset graph visibility (show all nodes and links)
+            function resetGraphVisibility() {
+                node.style("opacity", 1);
+                labels.style("opacity", 1);
+                link.style("opacity", 0.6)
+                    .classed("protocol-link", false)
+                    .attr("stroke-width", d => Math.min(Math.sqrt(d.value) + 1, 10))
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                
+                // Hide protocol legend
+                document.getElementById("protocolLegend").style.display = "none";
+            }
+            
+            // Create legend for node types
             createLegend();
             
             function createLegend() {
-                const legendContainer = document.getElementById('legendContainer');
-                legendContainer.innerHTML = '';
+                const legendNodeContainer = document.getElementById('legendNodeContainer');
+                legendNodeContainer.innerHTML = '';
                 
-                const types = [
+                const nodeType = [
                     { type: "source", label: "Source" },
                     { type: "destination", label: "Destination" },
                     { type: "both", label: "Source & Dest" }
                 ];
-                
-                types.forEach((item, i) => {
-                    const legendItem = document.createElement('div');
-                    legendItem.className = 'legend-item';
+
+                nodeType.forEach(item => {
+                    const legendNode = document.createElement('div');
+                    legendNode.className = 'legend-item';
                     
                     const colorBox = document.createElement('div');
                     colorBox.className = 'legend-color';
-                    colorBox.style.backgroundColor = colorScales[colorScheme](i);
+                    colorBox.style.backgroundColor = nodeColors[item.type];
                     
                     const label = document.createElement('span');
                     label.textContent = item.label;
                     
-                    legendItem.appendChild(colorBox);
-                    legendItem.appendChild(label);
-                    legendContainer.appendChild(legendItem);
+                    legendNode.appendChild(colorBox);
+                    legendNode.appendChild(label);
+                    legendNodeContainer.appendChild(legendNode);
                 });
+
+                const legendLinkContainer = document.getElementById('legendLinkContainer');
+                legendLinkContainer.innerHTML = '';
+
+                processedData.stats.protocols.forEach(protocol => {
+                    const legendLink = document.createElement('div');
+                    legendLink.className = 'legend-item';
+                    
+                    const colorBox = document.createElement('div');
+                    colorBox.className = 'legend-color';
+                    colorBox.style.backgroundColor = protocolColors(protocol);
+                    console.log(protocolColors(protocol))
+                    
+                    const label = document.createElement('span');
+                    label.textContent = protocol;
+                    
+                    legendLink.appendChild(colorBox);
+                    legendLink.appendChild(label);
+                    legendLinkContainer.appendChild(legendLink);
+                })
             }
             
             // Event listeners for controls
@@ -511,37 +838,22 @@
                 node.attr("r", d => calculateNodeSize(d));
             });
             
-            document.getElementById('nodeSizeMultiplier').addEventListener('input', function() {
-                nodeSizeMultiplier = parseInt(this.value);
-                node.attr("r", d => calculateNodeSize(d));
-            });
-            
-            document.getElementById('colorScheme').addEventListener('change', function() {
-                colorScheme = this.value;
-                node.attr("fill", d => getNodeColor(d));
-                createLegend();
-            });
-            
-            document.getElementById('pauseSimulation').addEventListener('click', function() {
-                if (simulation.alpha() > 0) {
-                    simulation.stop();
-                    this.textContent = "Resume Physics";
-                } else {
-                    simulation.restart();
-                    this.textContent = "Pause Physics";
-                }
-            });
-            
-            document.getElementById('resetSimulation').addEventListener('click', function() {
-                simulation.nodes(graphData.nodes);
-                simulation.force("link").links(graphData.links);
-                simulation.alpha(1).restart();
+            // Toggle sidebar visibility
+            document.getElementById('toggleSidebar').addEventListener('click', function() {
+                const sidebar = document.getElementById('sidebar');
+                const toggleBtn = document.getElementById('toggleSidebar');
+                sidebar.classList.toggle('collapsed');
                 
-                // Reset zoom
-                svg.transition().duration(750).call(
-                    zoom.transform,
-                    d3.zoomIdentity
-                );
+                if (sidebar.classList.contains('collapsed')) {
+                    toggleBtn.innerHTML = '&gt;';
+                    toggleBtn.classList.add('sidebar-hidden');
+                } else {
+                    toggleBtn.innerHTML = '&lt;';
+                    toggleBtn.classList.remove('sidebar-hidden');
+                }
+                
+                // Trigger resize to update the graph layout
+                window.dispatchEvent(new Event('resize'));
             });
             
             document.getElementById('exportSVG').addEventListener('click', function() {
@@ -557,33 +869,136 @@
                 document.body.removeChild(downloadLink);
             });
             
-            // Filter functionality
-            document.getElementById('applyFilter').addEventListener('click', function() {
-                const filterValue = document.getElementById('ipFilter').value.trim();
-                if (!filterValue) return;
+            // Protocol dropdown filter functionality
+            document.getElementById('protocolFilter').addEventListener('change', function() {
+                const selectedProtocol = this.value;
+                if (!selectedProtocol) {
+                    // If no protocol is selected, show all
+                    return;
+                }
                 
-                // Filter nodes and links
-                const filteredNodes = processedData.nodes.filter(node => 
-                    node.id.includes(filterValue) || 
-                    processedData.links.some(link => 
-                        (link.source === node.id || link.target === node.id) && 
-                        (link.source.includes(filterValue) || link.target.includes(filterValue))
-                    )
-                );
-                
-                const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-                
+                // Filter links by selected protocol
                 const filteredLinks = processedData.links.filter(link => 
-                    filteredNodeIds.has(link.source) && filteredNodeIds.has(link.target)
+                    link.protocol === selectedProtocol
                 );
                 
+                // Get all nodes involved in these links
+                const nodeIds = new Set();
+                filteredLinks.forEach(link => {
+                    nodeIds.add(typeof link.source === 'object' ? link.source.id : link.source);
+                    nodeIds.add(typeof link.target === 'object' ? link.target.id : link.target);
+                });
+                
+                const filteredNodes = processedData.nodes.filter(node => nodeIds.has(node.id));
+                
+                // Update the graph with filtered data
                 updateGraph(filteredNodes, filteredLinks);
+                
+                // Reset any previous selection
+                clearNodeSelection();
+                
+                // Highlight matching protocol links
+                link.filter(l => l.protocol === selectedProtocol)
+                    .style("stroke-width", "4px")
+                    .style("stroke-opacity", "1");
+            });
+            
+            // IP search filter functionality
+            document.getElementById('applyFilter').addEventListener('click', function() {
+                applySearchFilter();
+            });
+            
+            // Also apply filter when pressing Enter in the search field
+            document.getElementById('searchFilter').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    applySearchFilter();
+                }
             });
             
             document.getElementById('resetFilter').addEventListener('click', function() {
-                document.getElementById('ipFilter').value = '';
+                document.getElementById('searchFilter').value = '';
+                document.getElementById('protocolFilter').selectedIndex = 0;
                 updateGraph(processedData.nodes, processedData.links);
+                resetGraphVisibility();
+                clearNodeSelection();
             });
+            
+            // Clear node selection button
+            document.getElementById('clearSelection').addEventListener('click', function() {
+                clearNodeSelection();
+                resetGraphVisibility();
+            });
+            
+            // Function to apply IP search filter
+            function applySearchFilter() {
+                const filterValue = document.getElementById('searchFilter').value.trim().toLowerCase();
+                if (!filterValue) return;
+                
+                // Filter by IP address
+                const filteredNodes = processedData.nodes.filter(node => 
+                    node.id.toLowerCase().includes(filterValue)
+                );
+                
+                // If we have any nodes, find connections to/from those nodes
+                if (filteredNodes.length > 0) {
+                    const nodeIds = new Set(filteredNodes.map(n => n.id));
+                    
+                    const connectedLinks = processedData.links.filter(link => 
+                        nodeIds.has(typeof link.source === 'object' ? link.source.id : link.source) || 
+                        nodeIds.has(typeof link.target === 'object' ? link.target.id : link.target)
+                    );
+                    
+                    // Add nodes that are connected to our filtered nodes
+                    connectedLinks.forEach(link => {
+                        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                        
+                        if (!nodeIds.has(sourceId)) {
+                            const sourceNode = processedData.nodes.find(n => n.id === sourceId);
+                            if (sourceNode) {
+                                filteredNodes.push(sourceNode);
+                                nodeIds.add(sourceId);
+                            }
+                        }
+                        
+                        if (!nodeIds.has(targetId)) {
+                            const targetNode = processedData.nodes.find(n => n.id === targetId);
+                            if (targetNode) {
+                                filteredNodes.push(targetNode);
+                                nodeIds.add(targetId);
+                            }
+                        }
+                    });
+                    
+                    // Update the graph with filtered data
+                    updateGraph(filteredNodes, connectedLinks);
+                    
+                    // Reset any previous selection
+                    clearNodeSelection();
+                    
+                    // Highlight matching nodes
+                    const exactMatches = filteredNodes.filter(n => 
+                        n.id.toLowerCase().includes(filterValue)
+                    );
+                    
+                    if (exactMatches.length > 0) {
+                        node.filter(n => exactMatches.some(m => m.id === n.id))
+                            .style("stroke", "#ff6b6b")
+                            .style("stroke-width", "3px");
+                    }
+                } else {
+                    alert("No matches found for: " + filterValue);
+                }
+            }
+            
+            // Function to clear node selection
+            function clearNodeSelection() {
+                selectedNodes = [];
+                node.classed("selected-node", false);
+                document.getElementById("selectedCount").textContent = "0 nodes selected";
+                document.getElementById("clearSelection").disabled = true;
+                document.getElementById("protocolLegend").style.display = "none";
+            }
             
             // Function to update the graph with new data
             function updateGraph(nodes, links) {
@@ -593,44 +1008,54 @@
                     links: links
                 };
                 
-                // Update the links
-                link = link.data(links, d => `${d.source}-${d.target}`);
-                link.exit().remove();
-                link = link.enter()
-                    .append("line")
-                    .attr("stroke", "#999")
-                    .attr("stroke-opacity", 0.6)
-                    .attr("stroke-width", d => Math.sqrt(d.value))
-                    .merge(link);
+                // Remove all existing elements
+                linkGroup.selectAll("line").remove();
+                g.selectAll(".nodes").remove();
+                g.selectAll("text").remove();
                 
-                // Update the nodes
-                node = node.data(nodes, d => d.id);
-                node.exit().remove();
-                node = node.enter()
+                // Create new links
+                link = linkGroup.selectAll("line")
+                    .data(links)
+                    .enter()
+                    .append("line")
+                    .attr("stroke", d => protocolColors(d.protocol))
+                    .attr("stroke-opacity", 0.6)
+                    .attr("stroke-width", d => Math.min(Math.sqrt(d.value) + 1, 10))
+                
+                // Create new nodes
+                node = g.append("g")
+                    .attr("class", "nodes")
+                    .selectAll("circle")
+                    .data(nodes)
+                    .enter()
                     .append("circle")
                     .attr("r", d => calculateNodeSize(d))
                     .attr("fill", d => getNodeColor(d))
                     .attr("stroke", "#fff")
                     .attr("stroke-width", 1.5)
+                    .attr("cursor", "pointer")
                     .call(d3.drag()
                         .on("start", dragstarted)
                         .on("drag", dragged)
                         .on("end", dragended))
-                    .on("mouseover", showNodeInfo)
-                    .on("mouseout", hideNodeInfo)
-                    .merge(node);
+                    .on("mouseover", showNodeTooltip)
+                    .on("mouseout", hideNodeTooltip)
+                    .on("click", handleNodeClick);
                 
-                // Update labels
-                labels.remove();
-                labels = g.selectAll("text")
+                // Create new labels
+                labels = g.append("g")
+                    .selectAll("text")
                     .data(nodes)
                     .enter()
                     .append("text")
-                    .text(d => d.count > 1 ? d.id : "")
+                    .text(d => d.id)
                     .attr("font-size", 10)
                     .attr("dx", 12)
                     .attr("dy", 4)
-                    .style("pointer-events", "none");
+                    .style("pointer-events", "none")
+                    .style("fill", "#333")
+                    .style("font-weight", "bold")
+                    .style("text-shadow", "0 0 3px white");
                 
                 // Update and restart the simulation
                 simulation.nodes(nodes);
