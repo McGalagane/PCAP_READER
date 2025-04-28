@@ -5,6 +5,7 @@
 
 from datetime import datetime
 import numpy as np
+from streamlit_theme import st_theme
 import plost
 import json
 import requests
@@ -23,6 +24,7 @@ import sys
 import pandas as pd
 from scapy.utils import corrupt_bytes
 from streamlit_echarts import st_echarts
+import streamlit.components.v1 as components
 import geoip2.database
 import pydeck as pdk
 import folium
@@ -971,6 +973,9 @@ def DrawFoliumMap(data):
 
 def main():
     st.set_page_config(page_title="PCAP Dashboard", page_icon="📈", layout="wide")
+    theme = st_theme()
+
+    print(theme)
 
     if "menu_option" not in st.session_state:
         st.session_state["menu_option"] = 1
@@ -981,9 +986,9 @@ def main():
         options=["Home", "Upload", "Raw Data", "Graph", "Analysis", "Geoplots"],
         icons=["house", "upload", "files", "diagram-2", "graph-up", "globe"],
         menu_icon="cast",
-        default_index=0,  # ← OK pour la 1ère fois
+        default_index=0,
         orientation="horizontal",
-        manual_select=st.session_state['menu_option'],  # ← CONTROLE ici
+        manual_select=st.session_state['menu_option'],
         key="menu_4"
     )
 
@@ -1011,11 +1016,15 @@ def main():
             with open('graph.html', 'r') as f:
                 html_template = f.read()
             
-            # Inject the data into the HTML
-            html_data = html_template.replace('const pcapData = {}', f'const pcapData = {pcap_json}')
-            
+            html_data = html_template.replace(
+                'const pcapData = {}', f'const pcapData = {pcap_json}'
+            )
+
+            html_file = html_data.replace(
+                'const theme = {}', f'const theme = {theme}'
+            )
             # Display the HTML with the data
-            components.html(html_data, height=1000)
+            components.html(html_file, height=1000, width=None)
         else:
             st.subheader("Upload a file to see the graph")
 
