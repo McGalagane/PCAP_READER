@@ -517,7 +517,8 @@ def page_file_upload():
         st.session_state.uploaded_file = uploaded_file
 
         if uploaded_file is not None:
-            st.success("File uploaded successfully!")
+            st.session_state["menu_option"] = 2
+            st.rerun()
     else:
         # Display existing file info
         st.warning("An uploaded file already exists in the session state.")
@@ -613,14 +614,16 @@ def RawDataView():
         with open(temp_file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        # Call your dpkt-based processor
-        dataframe_data = pcap_decode.process_pcap(temp_file_path)
-        st.session_state.pcap_data = dataframe_data
+        with st.spinner('Processing PCAP file, please wait...'):
+            # Call your dpkt-based processor
+            dataframe_data = pcap_decode.process_pcap(temp_file_path)
+            st.session_state.pcap_data = dataframe_data
 
-        # Add live time duration string if needed (dummy or calculated externally)
-        dataframe_data['Live Time Duration'] = 'N/A'  # Replace with actual string if available
+            # Add live time duration string if needed (dummy or calculated externally)
+            dataframe_data['Live Time Duration'] = 'N/A'  # Replace with actual string if available
 
-        all_columns = list(dataframe_data.columns)
+            all_columns = list(dataframe_data.columns)
+
         st.sidebar.header("Please Filter Here:")
 
         # Multiselect for filtering by protocol
@@ -968,15 +971,24 @@ def DrawFoliumMap(data):
 
 def main():
     st.set_page_config(page_title="PCAP Dashboard", page_icon="📈", layout="wide")
+
+    if "menu_option" not in st.session_state:
+        st.session_state["menu_option"] = 1
+
     # download from Bootstrap
     selected = option_menu(
         menu_title=None,
-        options=["Home", "Upload", "Raw Data", "Graph", "Analysis","Geoplots"],
-        icons=["house", "upload", "files", "diagram-2", "graph-up","globe"],
+        options=["Home", "Upload", "Raw Data", "Graph", "Analysis", "Geoplots"],
+        icons=["house", "upload", "files", "diagram-2", "graph-up", "globe"],
         menu_icon="cast",
-        default_index=0,
-        orientation="horizontal"
+        default_index=0,  # ← OK pour la 1ère fois
+        orientation="horizontal",
+        manual_select=st.session_state['menu_option'],  # ← CONTROLE ici
+        key="menu_4"
     )
+
+    print(st.session_state["menu_option"])
+    print(selected)
 
     # Intro Page
     if selected == "Home":
