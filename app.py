@@ -4,9 +4,12 @@
 
 
 from datetime import datetime
+import ipaddress
+from streamlit_folium import st_folium
 import numpy as np
 from streamlit_theme import st_theme
 import plost
+from collections import Counter
 import json
 import requests
 import streamlit as st
@@ -35,11 +38,12 @@ from mac_vendor_lookup import MacLookup
 from mac_vendor_lookup import VendorNotFoundError
 import time
 import plotly.express as px
-
+from utils.get_geo import IPMapGenerator
 
 mac = MacLookup()
 PCAPS = None  # Packets
 pcap_decode = FastPcapDecode()
+map_gen = IPMapGenerator()
 
 
 if 'uploaded_file' not in st.session_state:
@@ -253,16 +257,6 @@ def time_flow(PCAPS):
     return time_flow_dict
 
 
-def get_host_ip(PCAPS):
-    ip_list = list()
-    for pcap in PCAPS:
-        if pcap.haslayer("IP"):
-            ip_list.append(pcap.getlayer("IP").src)
-            ip_list.append(pcap.getlayer("IP").dst)
-    host_ip = collections.Counter(ip_list).most_common(1)[0][0]
-    return host_ip
-
-
 def data_flow(PCAPS, host_ip):
     data_flow_dict = {'IN': 0, 'OUT': 0}
     for pcap in PCAPS:
@@ -398,110 +392,6 @@ def most_flow_statistic(PCAPS, PD):
     return most_flow_dict
 
 
-def getmyip():
-    try:
-        headers = {'User-Agent': 'Baiduspider+(+http://www.baidu.com/search/spider.htm'}
-        ip = requests.get('http://icanhazip.com', headers=headers).text
-        return ip.strip()
-    except:
-        return None
-
-
-def get_geo(ip):
-    reader = geoip2.database.Reader('utils/GeoIP/GeoLite2-City.mmdb')
-    try:
-        response = reader.city(ip)
-        # city_name = response.country.names['zh-CN']+response.city.names['zh-CN']
-        city_name = response.country.names['en'] + response.city.names['en']
-        longitude = response.location.longitude
-        latitude = response.location.latitude
-        return [city_name, longitude, latitude]
-    except:
-        return None
-
-
-def get_ipmap(PCAPS, host_ip):
-    geo_dict = dict()
-    ip_value_dict = dict()
-    ip_value_list = list()
-    for pcap in PCAPS:
-        if pcap.haslayer("IP"):
-            src = pcap.getlayer("IP").src
-            dst = pcap.getlayer("IP").dst
-            pcap_len = len(corrupt_bytes(pcap))
-            if src == host_ip:
-                oip = dst
-            else:
-                oip = src
-            if oip in ip_value_dict:
-                ip_value_dict[oip] += pcap_len
-            else:
-                ip_value_dict[oip] = pcap_len
-    for ip, value in ip_value_dict.items():
-        geo_list = get_geo(ip)
-        if geo_list:
-            geo_dict[geo_list[0]] = [geo_list[1], geo_list[2]]
-            Mvalue = str(float('%.2f' % (value / 1024.0))) + ':' + ip
-            ip_value_list.append({geo_list[0]: Mvalue})
-        else:
-            pass
-    return [geo_dict, ip_value_list]
-
-
-# def ipmap(PCAPS):
-#     myip = getmyip()
-#     host_ip = get_host_ip(PCAPS)
-#     ipdata = get_ipmap(PCAPS, host_ip)
-#     geo_dict = ipdata[0]
-#     ip_value_list = ipdata[1]
-#     myip_geo = get_geo(myip)
-#     ip_value_list = [(list(d.keys())[0], list(d.values())[0])
-#                      for d in ip_value_list]
-#     # print('ip_value_list', ip_value_list)
-#     # print('geo_dict', geo_dict)
-#     # return render_template('./dataanalyzer/ipmap.html', geo_data=geo_dict, ip_value=ip_value_list, mygeo=myip_geo)
-#     return geo_dict, ip_value_list, myip_geo
-
-
-def ipmap(PCAPS):
-    # Assuming these functions are defined elsewhere in your code
-    myip = getmyip()
-    host_ip = get_host_ip(PCAPS)
-    ipdata = get_ipmap(PCAPS, host_ip)
-    geo_dict = ipdata[0]
-    ip_value_list = ipdata[1]
-    myip_geo = get_geo(myip)
-    ip_value_list = [(list(d.keys())[0], list(d.values())[0]) for d in ip_value_list]
-
-    # Create DataFrames from the dictionaries and lists
-    geo_df = pd.DataFrame(list(geo_dict.items()), columns=['Location', 'Coordinates'])
-    ip_df = pd.DataFrame(ip_value_list, columns=['Location', 'IP'])
-
-    # Check if myip_geo is not None before creating the DataFrame
-    # if myip_geo is not None:
-    #     myip_geo_df = pd.DataFrame(myip_geo, columns=['MyLocation', 'MyCoordinates'])
-    #
-    #     # Merge the DataFrames based on the 'Location' column
-    #     merged_df = geo_df.merge(ip_df, on='Location', how='left').merge(myip_geo_df, left_on='Location',
-    #                                                                      right_on='MyLocation', how='left')
-    # else:
-    #     # If myip_geo is None, merge only geo_df and ip_df
-    merged_df = geo_df.merge(ip_df, on='Location', how='left')
-
-    # Split the 'IP' column into 'Numeric_Value' and 'IP_Address'
-    merged_df[['Data_Traffic', 'IP_Address']] = merged_df['IP'].str.split(':', expand=True)
-
-    # Drop the original 'IP' column
-    merged_df = merged_df.drop('IP', axis=1)
-    # print("merged_df>>", merged_df)
-
-    # Display the merged DataFrame
-    with st.expander("Geo Data Associated with PCAPs "):
-        st.write(merged_df)
-
-    return merged_df
-
-
 def page_file_upload():
     # # File upload
     # uploaded_file = st.file_uploader("Choose a CSV file", type=["csv","pcap", "cap"])
@@ -520,7 +410,6 @@ def page_file_upload():
 
         if uploaded_file is not None:
             st.session_state["menu_option"] = 2
-            st.rerun()
     else:
         # Display existing file info
         st.warning("An uploaded file already exists in the session state.")
@@ -607,7 +496,6 @@ def Intro():
 
         """
     )
-
 
 def RawDataView():
     uploaded_file = st.session_state.uploaded_file
@@ -950,32 +838,19 @@ def OutboundIPTotalTrafficChart(data):  # ip_flow['out_keyl'],ip_flow['out_len']
     fig.update_layout(title_x=0.5)
     st.plotly_chart(fig)
 
-
-def DrawFoliumMap(data):
-    m = folium.Map(location=[data.iloc[0]['Coordinates'][1], data.iloc[0]['Coordinates'][0]],
-                   zoom_start=5)
-
-    # Create MarkerCluster layer
-    marker_cluster = MarkerCluster().add_to(m)
-
-    # Add markers for each location in the DataFrame
-    for index, row in data.iterrows():
-        popup_text = f"IP Address: {row['IP_Address']}<br>Data Traffic: {row['Data_Traffic']}"
-
-        folium.Marker(
-            location=row['Coordinates'][::-1],
-            popup=folium.Popup(popup_text, max_width=300),
-            icon=folium.Icon(color='blue'),  # Customize marker color
-        ).add_to(marker_cluster)
-
-    # Display the map in Streamlit
-    folium_static(m,width=1820 , height=600)
+def extract_valid_ip(ip_string):
+    if pd.isna(ip_string):
+        return None
+    ip_only = str(ip_string).split(":")[0]
+    try:
+        ipaddress.ip_address(ip_only)
+        return ip_only
+    except ValueError:
+        return None
 
 def main():
     st.set_page_config(page_title="PCAP Dashboard", page_icon="📈", layout="wide")
     theme = st_theme()
-
-    print(theme)
 
     if "menu_option" not in st.session_state:
         st.session_state["menu_option"] = 1
@@ -1212,23 +1087,15 @@ def main():
                     # Row 2 (larger height)
                     with st.expander("Outbound IP Total Traffic Chart"):
                         OutboundIPTotalTrafficChart(data_ip_dict)   #Bar CHart axis -90 # ip_flow['out_keyl'],ip_flow['out_len']
-
     if selected == "Geoplots":
         st.subheader("Geoplot")
-        # ///////////////////////////////////////////
-        # ////              Data of Geoplot     /////
-        # ///////////////////////////////////////////
-        if "pcap_data" not in st.session_state:
-            st.session_state.pcap_data = []
-            st.warning("No valid data for Geoplot.")
-        else:
-            data_of_pcap = st.session_state.pcap_data
-            if data_of_pcap:
-                ipmap_result = ipmap(data_of_pcap)
-                # Display the map in Streamlit
-                DrawFoliumMap(ipmap_result)
-            else:
-                st.warning("No valid data for Geoplot.")
+        df = st.session_state.pcap_data
+        source_ips = df['Source'].apply(extract_valid_ip)
+        destination_ips = df['Destination'].apply(extract_valid_ip)
+        all_ips = pd.concat([source_ips, destination_ips]).dropna().unique().tolist()
+        ip_map = map_gen.generate_map(all_ips)
+        st_folium(ip_map, use_container_width=True , height=900)
+
 
 if __name__ == "__main__":
     main()
