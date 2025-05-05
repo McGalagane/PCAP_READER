@@ -964,7 +964,7 @@ def main():
                         st.plotly_chart(fig, use_container_width=True)
                 
                 with analysis_tabs[2]:
-                    st.header("PCAP Analysis Report Generation")
+                    st.header("PCAP Analysis Report Generation (Soon)")
                     
                     # Report customization options
                     st.subheader("Customize Report")
