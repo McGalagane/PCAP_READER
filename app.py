@@ -904,7 +904,7 @@ def main():
             st.info("Please upload a PCAP file first to see the analysis.")
         else:
             # Check if we have data to analyze
-            if len(st.session_state.pcap_data) > 0:
+            if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
                 # Create tabs for different types of analysis
                 analysis_tabs = st.tabs([
                     "📊 Analysis Dashboard", 
@@ -991,15 +991,18 @@ def main():
                             mime="application/pdf"
                         )
             else:
-                st.warning("The uploaded file doesn't contain any packet data. Please upload a valid PCAP file.")
+                st.warning("Upload a file to see data analysis")
     if selected == "Geoplots":
-        st.subheader("Geoplot")
-        df = st.session_state.pcap_data
-        source_ips = df['Source'].apply(extract_valid_ip)
-        destination_ips = df['Destination'].apply(extract_valid_ip)
-        all_ips = pd.concat([source_ips, destination_ips]).dropna().unique().tolist()
-        ip_map = map_gen.generate_map(all_ips)
-        st_folium(ip_map, use_container_width=True , height=900)
+        if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
+            st.subheader("Geoplot")
+            df = st.session_state.pcap_data
+            source_ips = df['Source'].apply(extract_valid_ip)
+            destination_ips = df['Destination'].apply(extract_valid_ip)
+            all_ips = pd.concat([source_ips, destination_ips]).dropna().unique().tolist()
+            ip_map = map_gen.generate_map(all_ips)
+            st_folium(ip_map, use_container_width=True , height=900)
+        else:
+            st.warning("Upload a file to see data geolocation")
 
 
 if __name__ == "__main__":
