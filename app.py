@@ -7,6 +7,7 @@ from datetime import datetime
 import ipaddress
 from streamlit_folium import st_folium
 import numpy as np
+import subprocess
 from streamlit_theme import st_theme
 import plost
 from collections import Counter
@@ -404,12 +405,27 @@ def page_file_upload():
     #     st.success("File uploaded successfully!")
     if "uploaded_file" not in st.session_state or st.session_state.uploaded_file is None:
         # File upload
-        uploaded_file = st.file_uploader("Choose a CSV file", type=["csv", "pcap", "cap"])
-
-        # Store the uploaded file in session state
-        st.session_state.uploaded_file = uploaded_file
+        uploaded_file = st.file_uploader("Choose a CSV file", type=["csv", "pcap", "cap", 'pcapng'])
 
         if uploaded_file is not None:
+            file_extension = os.path.splitext(uploaded_file.name)[1]
+
+            # Save the uploaded file to a temporary location
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_input:
+                temp_input.write(uploaded_file.read())
+                temp_input_path = temp_input.name
+
+            if file_extension == ".pcapng" or is_pcapng(temp_input_path):
+                st.warning("PCAPNG file detected. Converting to PCAP format...")
+                print('pcapng detected')
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pcap") as temp_output:
+                    converted_path = convert_pcapng_to_pcap(temp_input_path, temp_output.name)
+                if converted_path:
+                    st.session_state.uploaded_file = converted_path
+            else:
+                st.session_state.uploaded_file = temp_input_path
+
+        if st.session_state.uploaded_file is not None:
             st.session_state["menu_option"] = 2
             st.rerun()
     else:
@@ -496,14 +512,11 @@ def Intro():
 
 def RawDataView():
     uploaded_file = st.session_state.uploaded_file
-    if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
-        temp_file_path = f"/tmp/{uploaded_file.name}"
-        with open(temp_file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+    if uploaded_file is not None:
 
         with st.spinner('Processing PCAP file, please wait...'):
             # Call your dpkt-based processor
-            dataframe_data = pcap_decode.process_pcap(temp_file_path)
+            dataframe_data = pcap_decode.process_pcap(uploaded_file)
             st.session_state.pcap_data = dataframe_data
 
             # Add live time duration string if needed (dummy or calculated externally)
@@ -761,6 +774,19 @@ def DataInOutStatistics(data):
     # st.write("Data Packet Length Statistics")
     st_echarts(options=options, height="600px", renderer='svg')
 
+def convert_pcapng_to_pcap(input_file, output_file):
+    try:
+        subprocess.run(['editcap', '-F', 'pcap', input_file, output_file], check=True)
+        return output_file
+    except subprocess.CalledProcessError:
+        st.error("Failed to convert PCAPNG to PCAP. Make sure editcap is installed.")
+        return None
+
+def is_pcapng(file_path):
+    with open(file_path, 'rb') as f:
+        magic_number = f.read(4)
+        return magic_number == b'\x0a\x0d\x0d\x0a'
+
 def TotalProtocolPacketFlow(data):
     # st.write("Total Protocol Packet Flow bar chart")
     data8 = {'Protocol': list(data.keys()), 'freq': list(data.values())}
@@ -881,7 +907,7 @@ def main():
 
     if selected == "Graph":
         uploaded_file = st.session_state.uploaded_file
-        if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
+        if uploaded_file is not None:
             pcap_json = json.dumps(st.session_state.pcap_data.to_dict(orient='records'))
             # Read the HTML template
             with open('graph.html', 'r') as f:
@@ -905,7 +931,7 @@ def main():
         else:
             # Check if we have data to analyze
             uploaded_file = st.session_state.uploaded_file
-            if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
+            if uploaded_file is not None:
                 # Create tabs for different types of analysis
                 analysis_tabs = st.tabs([
                     "📊 Analysis Dashboard", 
@@ -995,7 +1021,7 @@ def main():
                 st.warning("Upload a file to see data analysis")
     if selected == "Geoplots":
         uploaded_file = st.session_state.uploaded_file
-        if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
+        if uploaded_file is not None:
             st.subheader("Geoplot")
             df = st.session_state.pcap_data
             source_ips = df['Source'].apply(extract_valid_ip)
