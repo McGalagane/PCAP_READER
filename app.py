@@ -904,6 +904,7 @@ def main():
             st.info("Please upload a PCAP file first to see the analysis.")
         else:
             # Check if we have data to analyze
+            uploaded_file = st.session_state.uploaded_file
             if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
                 # Create tabs for different types of analysis
                 analysis_tabs = st.tabs([
@@ -993,6 +994,7 @@ def main():
             else:
                 st.warning("Upload a file to see data analysis")
     if selected == "Geoplots":
+        uploaded_file = st.session_state.uploaded_file
         if uploaded_file is not None and uploaded_file.type == "application/octet-stream":
             st.subheader("Geoplot")
             df = st.session_state.pcap_data
