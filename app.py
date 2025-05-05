@@ -438,66 +438,61 @@ def page_display_info():
 
 
 def Intro():
-    # Introduction
-    st.markdown(
-        """
-        Packet Capture (PCAP) files are a common way to store network traffic data. They contain information about
-        the packets exchanged between devices on a network. This data is crucial for network analysis and cybersecurity.
-        
-        ## Support
-        
-        [![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/pareshmakwha)
-   
- 
-        ## What is a PCAP file?
+    st.markdown("""
+    ### 🛠️ How to Use the PCAP Reader Tool
 
-        A PCAP file (Packet Capture) is a binary file that stores network traffic data. It records the details of
-        each packet, such as source and destination addresses, protocol, and payload. PCAP files are widely used by
-        network administrators, security professionals, and researchers to analyze network behavior.
+    Welcome to the **PCAP Reader Web Application**! This tool is designed to help cybersecurity analysts and network engineers easily **analyze `.pcap` files** without diving into complex CLI tools.
 
-        ## Importance in Cybersecurity
+    ---
+    #### 🔍 Features Overview
+    - 📤 **Upload**: Load your own `.pcap` file for analysis.
+    - 📊 **Raw Data**: View parsed packet data in tabular form.
+    - 📈 **Graph**: Visualize network activity and protocol flow.
+    - 📐 **Analysis**: Explore vendor communications, top talkers, and more.
+    - 🌍 **Geoplots**: See geographic locations of IPs if available.
 
-        PCAP files play a vital role in cybersecurity for several reasons:
+    ---
+    #### 🚀 Step-by-Step Usage
 
-        - **Network Traffic Analysis:** Analyzing PCAP files helps detect anomalies, identify patterns, and
-          understand network behavior.
+    1. **Go to the "Upload" tab**  
+       Upload a `.pcap` file from your system. The file is processed automatically.
 
-        - **Incident Response:** In the event of a security incident, PCAP files can be instrumental in
-          reconstructing the sequence of events and identifying the root cause.
+    2. **Review Parsed Packets in "Raw Data"**  
+       Explore source/destination IPs, protocols, ports, timestamps, and more.
 
-        - **Forensic Investigations:** PCAP files provide a detailed record of network activity, aiding in
-          forensic investigations to determine the source and impact of security incidents.
-          
-          
-        ## Download Sample File 
-        Sample 1 [here](https://github.com/paresh2806/PCAP-Analyzer/blob/master/ftp3.pcap)  \n
-    
-        Sample 2 [here](https://github.com/paresh2806/PCAP-Analyzer/blob/master/ftp-data.pcap)
+    3. **Switch to "Graph" or "Analysis" tabs**  
+       Generate visualizations like packet timelines, communication heatmaps, protocol distributions, etc.
 
-        ## Getting Started
+    4. **Use "Geoplots" (optional)**  
+       If your PCAP contains public IP addresses, geolocation visualizations will be shown.
 
-        To get started with PCAP analysis, you can use tools like Wireshark or tshark. Additionally, Python
-        libraries such as Scapy and PyShark provide programmatic access to PCAP data.
+    ---
+    #### 📁 Supported File Types
+    - `.pcap`
 
-        ```python
-        # Example using Scapy
-        from scapy.all import rdpcap
+    ⚠️ Files should not exceed the upload limit (typically 200MB depending on deployment settings).
 
-        # Load PCAP file
-        pcap_file = "example.pcap"
-        packets = rdpcap(pcap_file)
+    ---
+    #### 🧩 Under the Hood
+    This app uses:
+    - `Scapy` for packet parsing
+    - `Pandas` for data structuring
+    - `Plotly` for interactive graphs
+    - `Streamlit` for web-based interaction
 
-        # Analyze packets
-        for packet in packets:
-            # Perform analysis here
-            pass
-        ```
+    ---
+    #### 🙋 Need Help?
+    If you encounter any issues, contact the dev team or check the app logs in your console.
 
-        Explore the capabilities of PCAP analysis tools to enhance your understanding of network traffic and
-        strengthen cybersecurity practices.
+    ### Reminder
+    This tool is a fork of the github project https://github.com/paresh2806/PCAP-Analyzer
 
-        """
-    )
+    ### 👤Contact
+    oscar.malandain@epitech.eu
+
+    Enjoy analyzing! 🔎
+    """)
+
 
 def RawDataView():
     uploaded_file = st.session_state.uploaded_file
@@ -872,7 +867,6 @@ def main():
     # Intro Page
     if selected == "Home":
         # Page header
-        st.subheader("Understanding PCAP Files in Cybersecurity")
         Intro()
 
     # File uploader
