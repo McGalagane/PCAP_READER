@@ -233,7 +233,8 @@ class PcapAnalyzer:
         # Network graph
         st.subheader("Network Communication Graph")
         
-        pcap_json = json.dumps(st.session_state.pcap_data.to_dict(orient='records'))
+        df = st.session_state.pcap_data.copy()
+        pcap_json = df.to_json(orient='records', date_format='iso')
         # Read the HTML template
         with open('graph.html', 'r') as f:
             html_template = f.read()
