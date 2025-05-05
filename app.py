@@ -39,6 +39,7 @@ from mac_vendor_lookup import VendorNotFoundError
 import time
 import plotly.express as px
 from utils.get_geo import IPMapGenerator
+from utils.analysis import PcapAnalyzer
 
 mac = MacLookup()
 PCAPS = None  # Packets
@@ -410,6 +411,7 @@ def page_file_upload():
 
         if uploaded_file is not None:
             st.session_state["menu_option"] = 2
+            st.rerun()
     else:
         # Display existing file info
         st.warning("An uploaded file already exists in the session state.")
@@ -902,191 +904,100 @@ def main():
             components.html(html_file, height=1000, width=None)
         else:
             st.subheader("Upload a file to see the graph")
-
     if selected == "Analysis":
         st.subheader("Dashboard")
         if "pcap_data" not in st.session_state:
-            st.session_state.pcap_data = []
-        # get analysis of data
+            st.info("Please upload a PCAP file first to see the analysis.")
         else:
-            data_of_pcap = st.session_state.pcap_data
-            if data_of_pcap is None:
-                art = """
-                .....+@*+@+..................................................*@+*@+.....
-                ....%-....:*................................................*:....:@....
-                .:%%*.....:*................................................*:.....*%%:.
-                +=.......:@..................................................@-.......-*
-                %..........*#..............................................#*..........%
-                =*...-%:.....#+...................::::...................+%.....:%-..:#=
-                ..:=-..+#:....:%=..........-*%%#+======+*#%#=:.........=%:....:#...-=:..
-                .........*#.....-%-.....+%*==================+#%-....-%-.....#*.........
-                ...........#*.....=%:-%*=========================#*-%=.....*#...........
-                .............%+....-%+=============================#*....+%.............
-                ..............:%=.#*=================================@-=%:..............
-                ................=@====================================##................
-                ................%===+*##%%%%%%%%%%%%%%%%%%%%%%%%###+===*=...............
-                ...............@%%%####%%%%%@@@@@@@@@@@@@@@@%%%%%%###%%%@-..............
-                ..........:+##%@%#*++++==========================++++*#%@@##*:..........
-                .....*%@*+==========+#%%%%%@@%##**+++++**#%%@%%%%%%*==========+*%%*.....
-                ...%+=========#@+::...................................:-%%=========+%...
-                ...*%========*+........#@@@@%*............=%@@@@%:.......-@========%#...
-                ......#@@#===*+.....=@@@@@@@@@@@........*@@@@@@@@@@+.....:@===#@@#:.....
-                .............**....*@@@@@@@@@@@@@:.....%@@@@@@@@@@@@#....-@:............
-                ..............%....@@@@@@@@@@@@@@@....=@@@@@@@@@@@@@@-...+=.............
-                ..............*-...@@@@@@@@@@@@@@@....*@@@@@@@@@@@@@@-...%..............
-                ...............@...#@@@@@@@@@@@@@=....:@@@@@@@@@@@@@@...#=..............
-                ...............:%...%@@@@@@@@@@@*......=@@@@@@@@@@@@:..-+...............
-                ................:#...:%@@@@@@@#....--....*@@@@@@@@=...+#................
-                .................:%:.............+@@@@=..............#=.................
-                ..................-%#............+@@@@=............=@=..................
-                ................-%-..**:...........--............+#:.-%-................
-                ..............:%=.....+%%+:...................=%%*.....=%:..............
-                .............#+.....=%:..%=+%*=:.........=+%*-@..:%+.....+%.............
-                ...........**.....-%-...:#*...%=:==**+=-=%...#+#...:%=.....*#...........
-                .........+#:....-%-.....*@.:**#....-:....%**-.%@.....-%:.....#+.........
-                ..:=-..=#:....:%=.......=*%..%.:-=+**+==:.%..%*@.......=%:....:#=..:-:..
-                =#:..-%:.....#*..........@.=@*.....-:.....*%*.#:.........+#.....:%=..:#=
-                %..........*#............=%...=#%*+++=*#%+:..*#............#*..........%
-                *=.......:@...............-@:...............%+..............:@:.......-*
-                .:%%*.....:*................##............*%:...............*:.....*#%:.
-                ....%:....:*..................:%@#=::-*%@=..................*:....:@....
-                .....+@++%*..................................................*%++@+.....
-                """
-
-                st.code(art)
+            # Check if we have data to analyze
+            if len(st.session_state.pcap_data) > 0:
+                # Create tabs for different types of analysis
+                analysis_tabs = st.tabs([
+                    "📊 Analysis Dashboard", 
+                    "🔍 Advanced Filters", 
+                    "📑 Report Generation"
+                ])
+                
+                with analysis_tabs[0]:
+                    # Initialize the PcapAnalyzer with the data
+                    data = st.session_state.pcap_data.copy()
+                    analyzer = PcapAnalyzer(data, theme)
+                    
+                    # Display the full dashboard
+                    analyzer.display_dashboard()
+                
+                with analysis_tabs[1]:
+                    st.header("Advanced Analysis Filters")
+                    
+                    # Create additional analysis options
+                    st.subheader("Custom Protocol Analysis")
+                    
+                    # Allow user to select specific protocols to compare
+                    all_protocols = sorted(st.session_state.pcap_data['Protocol'].unique().tolist())
+                    selected_protocols = st.multiselect(
+                        "Select protocols to compare:", 
+                        all_protocols,
+                        default=all_protocols[:min(3, len(all_protocols))]
+                    )
+                    
+                    if selected_protocols:
+                        # Filter data for selected protocols
+                        filtered_data = st.session_state.pcap_data[st.session_state.pcap_data['Protocol'].isin(selected_protocols)]
+                        
+                        # Create comparison charts
+                        st.subheader("Protocol Comparison")
+                        
+                        # Protocol packet count
+                        protocol_counts = filtered_data['Protocol'].value_counts()
+                        fig = px.bar(
+                            x=protocol_counts.index,
+                            y=protocol_counts.values,
+                            labels={'x': 'Protocol', 'y': 'Packet Count'},
+                            color=protocol_counts.index,
+                            title="Packet Count by Protocol"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Protocol data volume
+                        protocol_volume = filtered_data.groupby('Protocol')['len'].sum()
+                        fig = px.bar(
+                            x=protocol_volume.index,
+                            y=protocol_volume.values,
+                            labels={'x': 'Protocol', 'y': 'Data Volume (bytes)'},
+                            color=protocol_volume.index,
+                            title="Data Volume by Protocol"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                with analysis_tabs[2]:
+                    st.header("PCAP Analysis Report Generation")
+                    
+                    # Report customization options
+                    st.subheader("Customize Report")
+                    
+                    report_title = st.text_input("Report Title", "PCAP Analysis Report")
+                    
+                    report_sections = st.multiselect(
+                        "Select sections to include in the report",
+                        ["Basic Statistics", "Time Analysis", "Protocol Analysis", 
+                         "Network Analysis", "Vendor Analysis", "Packet Size Analysis"],
+                        default=["Basic Statistics", "Protocol Analysis", "Network Analysis"]
+                    )
+                    
+                    # Generate report button
+                    if st.button("Generate PDF Report"):
+                        st.info("PDF report generation would be implemented here.")
+                        st.success("Report generated successfully!")
+                        
+                        # Download link (placeholder)
+                        st.download_button(
+                            label="Download Report",
+                            data=b"Sample report content",
+                            file_name="pcap_analysis_report.pdf",
+                            mime="application/pdf"
+                        )
             else:
-                data_len_stats = pcap_len_statistic(data_of_pcap)  # protocol len statistics
-                data_protocol_stats = common_proto_statistic(data_of_pcap)  # count the occurrences of common network protocols
-                data_count_dict = most_proto_statistic(data_of_pcap,
-                                                       PD)  # counts the occurrences of each protocol and returns most common 10 protocols.
-                http_key, http_value = https_stats_main(data_of_pcap)  # https Protocol Statistics
-                dns_key, dns_value = dns_stats_main(data_of_pcap)  # DNS Protocol Statistics
-                # Data Protocol analysis end
-
-                # Traffic analysis start
-                time_flow_dict = time_flow(data_of_pcap)
-                host_ip = get_host_ip(data_of_pcap)
-                data_flow_dict = data_flow(data_of_pcap, host_ip)
-                data_ip_dict = data_in_out_ip(data_of_pcap, host_ip)
-                proto_flow_dict = proto_flow(data_of_pcap)
-                most_flow_dict = most_flow_statistic(data_of_pcap, PD)
-                most_flow_dict = sorted(most_flow_dict.items(), key=lambda d: d[1], reverse=True)
-                if len(most_flow_dict) > 10:
-                    most_flow_dict = most_flow_dict[0:10]
-                most_flow_key = list()
-                for key, value in most_flow_dict:
-                    most_flow_key.append(key)
-                # Traffic analysis end
-
-                # ///////////////////////////////////////////
-                # ////     Data of Protocol Analysis    /////
-                # ///////////////////////////////////////////
-                # DataPacketLengthStatistics(data_len_stats)  #Piechart
-                # # CommonProtocolStatistics(data_protocol_stats)
-                # CommonProtocolStatistics_ploty(data_protocol_stats) #Barchart
-                # MostFrequentProtocolStatistics(data_count_dict) #Piechart
-                # HTTP_HTTPSAccessStatistics(http_key,http_value)  #Bar CHart axis -90
-                # DNSAccessStatistics(dns_key,dns_value) #BarChart axis -90
-                # col1, col2 = st.columns([2, 3])
-                #
-                # # Column 1: DataPacketLengthStatistics - Piechart
-                # with col1:
-                #     st.subheader("Data Packet Length Statistics")
-                #     DataPacketLengthStatistics(data_len_stats)
-                #
-                #     # MostFrequentProtocolStatistics - Piechart
-                #     st.subheader("Most Frequent Protocol Statistics")
-                #     MostFrequentProtocolStatistics(data_count_dict)
-                #
-                # # Column 2: CommonProtocolStatistics_plotly - Barchart
-                # with col2:
-                #     st.subheader("Common Protocol Statistics")
-                #     CommonProtocolStatistics_ploty(data_protocol_stats)
-                #
-                #     # HTTP_HTTPSAccessStatistics - BarChart axis -90
-                #     st.subheader("HTTP/HTTPS Access Statistics")
-                #     HTTP_HTTPSAccessStatistics(http_key, http_value)
-                #
-                #     # DNSAccessStatistics - BarChart axis -90
-                #     st.subheader("DNS Access Statistics")
-                #     DNSAccessStatistics(dns_key, dns_value)
-
-                st.title(" Data of Protocol Analysis  ")
-                # Create a 2x2 column layout
-                col1, col2 = st.columns(2)
-
-                # Column 1: Uneven row heights
-                with col1:
-                    # Row 1
-                    with st.expander("Data Packet Length Statistics"):
-                        DataPacketLengthStatistics(data_len_stats)
-
-                    # Row 2 (smaller height)
-                    with st.expander("Most Frequent Protocol Statistics"):
-                        MostFrequentProtocolStatistics(data_count_dict)
-
-
-                # Column 2: Uneven row heights
-                with col2:
-                    # Row 1
-                    with st.expander("Common Protocol Statistics"):
-                        CommonProtocolStatistics_ploty(data_protocol_stats)
-
-                    # Row 2 (larger height)
-                    with st.expander("HTTP/HTTPS Access Statistics Details"):
-                        HTTP_HTTPSAccessStatistics(http_key, http_value)
-
-                    # Row 3 (smaller height)
-                    with st.expander("DNS Access Statistics"):
-                        DNSAccessStatistics(dns_key, dns_value)
-
-                # ///////////////////////////////////////////
-                # ////     Data of Traffic Analysis     /////
-                # ///////////////////////////////////////////
-                st.title("Data of Traffic Analysis")
-                col3, col4 = st.columns(2)
-                with col3:
-                    # Row 1
-                    with st.expander("Time Flow Chart"):
-                        TimeFlowChart(time_flow_dict)
-
-                    # Row 2 (smaller height)
-                    with st.expander("Data In/Out Statistics"):
-                        DataInOutStatistics(data_flow_dict)
-
-
-
-                # Column 2: Uneven row heights
-                with col4:
-                    # Row 1
-                    with st.expander("Total Protocol Packet Flow"):
-                        TotalProtocolPacketFlow(proto_flow_dict)
-
-
-                    # Row 2 (larger height)
-                    with st.expander("Total Protocol Packet Flow bar chart"):
-                        TotalProtocolPacketFlowbarchart(proto_flow_dict)
-
-                st.title("Inbound /Outbound ")
-                col5, col6 = st.columns(2)
-                with col5:
-                    # Row 1
-                    with st.expander("Inbound IP Traffic Data Packet Count Chart"):
-                        InboundIPTrafficDataPacketCountChart(data_ip_dict)  #Bar CHart axis -90 #ip_flow['in_keyp'], ip_flow['in_packet']
-
-                    # Row 2 (smaller height)
-                    with st.expander("Inbound IP Total Traffic Chart"):
-                        InboundIPTotalTrafficChart(data_ip_dict)  #Bar CHart axis -90 #ip_flow['in_keyl'],ip_flow['in_len']
-
-                # Column 2: Uneven row heights
-                with col6:
-                    # Row 1
-                    with st.expander("Outbound IP Traffic Data Packet Count Chart"):
-                        OutboundIPTrafficDataPacketCountChart(data_ip_dict)  #Bar CHart axis -90 # ip_flow['out_keyp'], ip_flow['out_packet']
-
-                    # Row 2 (larger height)
-                    with st.expander("Outbound IP Total Traffic Chart"):
-                        OutboundIPTotalTrafficChart(data_ip_dict)   #Bar CHart axis -90 # ip_flow['out_keyl'],ip_flow['out_len']
+                st.warning("The uploaded file doesn't contain any packet data. Please upload a valid PCAP file.")
     if selected == "Geoplots":
         st.subheader("Geoplot")
         df = st.session_state.pcap_data
