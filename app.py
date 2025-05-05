@@ -27,6 +27,7 @@ import tempfile
 import sys
 import pandas as pd
 from scapy.utils import corrupt_bytes
+from utils.security.security import SecurityPatternAnalyzer
 from streamlit_echarts import st_echarts
 import streamlit.components.v1 as components
 import geoip2.database
@@ -405,6 +406,7 @@ def page_file_upload():
     #     st.success("File uploaded successfully!")
     if "uploaded_file" not in st.session_state or st.session_state.uploaded_file is None:
         # File upload
+        print('rentre')
         uploaded_file = st.file_uploader("Choose a CSV file", type=["csv", "pcap", "cap", 'pcapng'])
 
         if uploaded_file is not None:
@@ -426,6 +428,8 @@ def page_file_upload():
                 st.session_state.uploaded_file = temp_input_path
 
         if st.session_state.uploaded_file is not None:
+            print('voila')
+            print(st.session_state["menu_option"])
             st.session_state["menu_option"] = 2
             st.rerun()
     else:
@@ -436,7 +440,7 @@ def page_file_upload():
         delete_existing = st.button("Delete Existing File and Upload New File")
         if delete_existing:
             st.session_state.uploaded_file = None
-            st.success("Existing file deleted. Please upload a new file.")
+            st.session_state["menu_option"] = 1
             page_file_upload()
 
 
@@ -515,12 +519,8 @@ def RawDataView():
     if uploaded_file is not None:
 
         with st.spinner('Processing PCAP file, please wait...'):
-            # Call your dpkt-based processor
             dataframe_data = pcap_decode.process_pcap(uploaded_file)
             st.session_state.pcap_data = dataframe_data
-
-            # Add live time duration string if needed (dummy or calculated externally)
-            dataframe_data['Live Time Duration'] = 'N/A'  # Replace with actual string if available
 
             all_columns = list(dataframe_data.columns)
 
@@ -536,7 +536,7 @@ def RawDataView():
         filter_value_len = st.sidebar.slider(
             "Filter by Length (Bytes):",
             min_value=int(dataframe_data["len"].min()),
-            max_value=int(dataframe_data["len"].max()),
+            max_value=int(dataframe_data["len"].max()) + 1,
             value=(int(dataframe_data["len"].min()), int(dataframe_data["len"].max()))
         )
 
@@ -579,7 +579,8 @@ def RawDataView():
             Data_to_display_df = Data_to_display_df[selected_columns]
 
         st.checkbox("Use container width", value=True, key="use_container_width")
-        st.dataframe(Data_to_display_df, use_container_width=st.session_state.use_container_width)
+        filtered_df = Data_to_display_df.drop(columns=['src_mac', 'dst_mac'], errors='ignore')
+        st.dataframe(filtered_df, use_container_width=st.session_state.use_container_width)
 
         # Statistics Section
         st.subheader("Statistics of Selected Data")
@@ -881,8 +882,8 @@ def main():
     # download from Bootstrap
     selected = option_menu(
         menu_title=None,
-        options=["Home", "Upload", "Raw Data", "Graph", "Analysis", "Geoplots"],
-        icons=["house", "upload", "files", "diagram-2", "graph-up", "globe"],
+        options=["Home", "Upload", "Raw Data", "Graph", "Analysis", "Geoplots", "Security"],
+        icons=["house", "upload", "files", "diagram-2", "graph-up", "globe", "shield-check"],
         menu_icon="cast",
         default_index=0,
         orientation="horizontal",
@@ -898,7 +899,7 @@ def main():
     # File uploader
     if selected == "Upload":
         page_file_upload()
-        page_display_info()
+        # page_display_info()
 
     # Raw Data Visualizer and Filtering
     if selected == "Raw Data":
@@ -908,7 +909,8 @@ def main():
     if selected == "Graph":
         uploaded_file = st.session_state.uploaded_file
         if uploaded_file is not None:
-            pcap_json = json.dumps(st.session_state.pcap_data.to_dict(orient='records'))
+            df = st.session_state.pcap_data.copy()
+            pcap_json = df.to_json(orient='records', date_format='iso')
             # Read the HTML template
             with open('graph.html', 'r') as f:
                 html_template = f.read()
@@ -1031,6 +1033,14 @@ def main():
             st_folium(ip_map, use_container_width=True , height=900)
         else:
             st.warning("Upload a file to see data geolocation")
+    if selected == "Security":
+        st.subheader("Security")
+        uploaded_file = st.session_state.uploaded_file
+        if uploaded_file is None:
+            st.info("Please upload a PCAP file first to perform security analysis.")
+        else:
+            security_analyzer = SecurityPatternAnalyzer(st.session_state.pcap_data)
+            security_analyzer.display_security_dashboard()
 
 
 if __name__ == "__main__":
